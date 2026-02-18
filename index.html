@@ -1,0 +1,1839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Analysis MVP</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border-color: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --green: #3fb950;
+            --green-bg: rgba(63, 185, 80, 0.15);
+            --red: #f85149;
+            --red-bg: rgba(248, 81, 73, 0.15);
+            --yellow: #d29922;
+            --yellow-bg: rgba(210, 153, 34, 0.15);
+            --blue: #58a6ff;
+            --blue-bg: rgba(88, 166, 255, 0.15);
+            --purple: #a371f7;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 30px;
+        }
+        
+        header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            gap: 20px;
+        }
+        
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+        
+        .icon-price { background: var(--blue-bg); }
+        .icon-news { background: var(--purple); background: rgba(163, 113, 247, 0.15); }
+        .icon-finance { background: var(--yellow-bg); }
+        .icon-strategy { background: var(--green-bg); }
+        
+        .card h2 {
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 150px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            color: var(--text-primary);
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.85rem;
+            resize: vertical;
+            transition: border-color 0.2s;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: var(--blue);
+        }
+        
+        textarea::placeholder {
+            color: var(--text-secondary);
+        }
+        
+        .input-group {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        
+        .form-row.full {
+            grid-template-columns: 1fr;
+        }
+        
+        .form-group {
+            display: grid;
+            gap: 6px;
+        }
+        
+        .form-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .form-group input,
+        .form-group select {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+        }
+        
+        .form-group input::placeholder {
+            color: var(--text-secondary);
+        }
+        
+        .symbol-input {
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 0;
+            white-space: nowrap;
+        }
+        
+        .form-row .btn {
+            margin-top: 0;
+            height: fit-content;
+            align-self: flex-end;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(88, 166, 255, 0.4);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .results {
+            margin-top: 20px;
+        }
+        
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .metric {
+            background: var(--bg-tertiary);
+            padding: 16px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+        
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        
+        .metric-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+        .neutral { color: var(--yellow); }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .badge-positive { background: var(--green-bg); color: var(--green); }
+        .badge-negative { background: var(--red-bg); color: var(--red); }
+        .badge-neutral { background: var(--yellow-bg); color: var(--yellow); }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 0.9rem;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.5px;
+        }
+        
+        tr:hover {
+            background: var(--bg-tertiary);
+        }
+        
+        .chart-container {
+            margin: 20px 0;
+            padding: 20px;
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+        }
+        
+        .chart-title {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+        }
+        
+        .bar-chart {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-around;
+            height: 150px;
+            gap: 8px;
+            padding: 10px 0;
+        }
+        
+        .bar-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            max-width: 80px;
+        }
+        
+        .bar {
+            width: 100%;
+            border-radius: 4px 4px 0 0;
+            transition: height 0.5s ease;
+            min-height: 5px;
+        }
+        
+        .bar-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 8px;
+            text-align: center;
+        }
+        
+        .bar-value {
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        
+        .price-chart {
+            position: relative;
+            height: 180px;
+            margin: 20px 0;
+            padding: 10px;
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+        }
+        
+        .price-line {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            right: 20px;
+            top: 20px;
+        }
+        
+        .price-point {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            transition: transform 0.2s;
+            z-index: 2;
+        }
+        
+        .price-point:hover {
+            transform: translate(-50%, -50%) scale(1.5);
+        }
+        
+        .price-point::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-primary);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+        
+        .price-point:hover::after {
+            opacity: 1;
+        }
+        
+        .chart-line {
+            position: absolute;
+            height: 2px;
+            transform-origin: left center;
+            z-index: 1;
+        }
+        
+        .y-axis {
+            position: absolute;
+            left: 0;
+            top: 20px;
+            bottom: 40px;
+            width: 35px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+        }
+        
+        .x-axis {
+            position: absolute;
+            bottom: 10px;
+            left: 40px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+        }
+        
+        .sentiment-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .sentiment-item {
+            padding: 12px;
+            margin: 8px 0;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            border-left: 3px solid;
+        }
+        
+        .sentiment-item.positive { border-color: var(--green); }
+        .sentiment-item.negative { border-color: var(--red); }
+        .sentiment-item.neutral { border-color: var(--yellow); }
+        
+        .sentiment-headline {
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+        
+        .sentiment-score {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+        
+        .strategy-section {
+            grid-column: 1 / -1;
+        }
+        
+        .strategy-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .strategy-card {
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .strategy-card h3 {
+            font-size: 1rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .strategy-card ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .strategy-card li {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.9rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        
+        .strategy-card li:last-child {
+            border-bottom: none;
+        }
+        
+        .outcome-box {
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .outcome-bullish {
+            background: linear-gradient(135deg, var(--green-bg), transparent);
+            border: 1px solid var(--green);
+        }
+        
+        .outcome-bearish {
+            background: linear-gradient(135deg, var(--red-bg), transparent);
+            border: 1px solid var(--red);
+        }
+        
+        .outcome-sideways {
+            background: linear-gradient(135deg, var(--yellow-bg), transparent);
+            border: 1px solid var(--yellow);
+        }
+        
+        .outcome-box h3 {
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+        }
+        
+        .probability-bar {
+            height: 8px;
+            background: var(--bg-primary);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .probability-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        
+        .gauge-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        
+        .gauge {
+            position: relative;
+            width: 200px;
+            height: 100px;
+            overflow: hidden;
+        }
+        
+        .gauge-bg {
+            position: absolute;
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: conic-gradient(
+                var(--red) 0deg 60deg,
+                var(--yellow) 60deg 120deg,
+                var(--green) 120deg 180deg,
+                transparent 180deg 360deg
+            );
+            clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%);
+        }
+        
+        .gauge-center {
+            position: absolute;
+            width: 140px;
+            height: 140px;
+            background: var(--bg-tertiary);
+            border-radius: 50%;
+            top: 30px;
+            left: 30px;
+        }
+        
+        .gauge-needle {
+            position: absolute;
+            width: 4px;
+            height: 60px;
+            background: var(--text-primary);
+            bottom: 0;
+            left: 98px;
+            transform-origin: bottom center;
+            transition: transform 0.5s ease;
+            border-radius: 2px;
+        }
+        
+        .gauge-value {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+        
+        .volume-indicator {
+            display: flex;
+            gap: 3px;
+            align-items: flex-end;
+            height: 30px;
+        }
+        
+        .volume-bar {
+            width: 8px;
+            border-radius: 2px;
+            transition: height 0.3s ease;
+        }
+        
+        .financials-table {
+            max-height: 400px;
+            overflow: auto;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .summary-text {
+            padding: 15px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 0.95rem;
+            line-height: 1.7;
+        }
+        
+        .highlight {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        
+        .highlight-green { background: var(--green-bg); color: var(--green); }
+        .highlight-red { background: var(--red-bg); color: var(--red); }
+        .highlight-yellow { background: var(--yellow-bg); color: var(--yellow); }
+        
+        .confidence-meter {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .confidence-bar {
+            flex: 1;
+            height: 10px;
+            background: var(--bg-primary);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .confidence-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width 0.5s ease;
+        }
+        
+        .trend-arrow {
+            font-size: 1.5rem;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .mini-chart {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        
+        .mini-bar {
+            width: 6px;
+            border-radius: 1px;
+        }
+        
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        
+        .tab-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .tab:hover, .tab.active {
+            background: var(--blue-bg);
+            border-color: var(--blue);
+            color: var(--blue);
+        }
+        
+        .candle-chart {
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            height: 180px;
+            padding: 20px 10px;
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+            margin: 15px 0;
+        }
+        
+        .candle {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+        }
+        
+        .candle-wick {
+            width: 2px;
+            background: var(--text-secondary);
+        }
+        
+        .candle-body {
+            width: 20px;
+            min-height: 10px;
+            border-radius: 2px;
+        }
+        
+        .candle-label {
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            margin-top: 10px;
+            position: absolute;
+            bottom: -25px;
+        }
+        
+        .insights-box {
+            background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-secondary));
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .insights-box h4 {
+            margin-bottom: 15px;
+            color: var(--blue);
+        }
+        
+        .insight-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .insight-item:last-child {
+            border-bottom: none;
+        }
+        
+        .insight-icon {
+            font-size: 1.2rem;
+        }
+        
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .metric-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            header h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Stock Analysis Dashboard</h1>
+            <p>Offline MVP • Paste Your Data • Get Instant Insights</p>
+        </header>
+        
+        <div class="grid">
+            <!-- Price Data Section -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon icon-price">📈</div>
+                    <h2>Price Data Analysis</h2>
+                </div>
+                <div class="input-group">
+                    <div class="form-row">
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label for="stockSymbol">Stock Symbol</label>
+                            <input type="text" id="stockSymbol" class="symbol-input" placeholder="e.g., TCS, RELIANCE, INFY" maxlength="10">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="startDate">Start Date (Optional)</label>
+                            <input type="date" id="startDate">
+                        </div>
+                        <div class="form-group">
+                            <label for="endDate">End Date (Optional)</label>
+                            <input type="date" id="endDate">
+                        </div>
+                        <button class="btn" onclick="analyzePrice()">Analyze Price Data</button>
+                    </div>
+                </div>
+                
+                <div id="priceResults" class="results hidden">
+                    <div class="metric-grid" id="priceMetrics"></div>
+                    <div class="chart-container">
+                        <div class="chart-title">📉 Price Movement (5-Day)</div>
+                        <div id="priceChart" class="price-chart"></div>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">📊 Volume Analysis</div>
+                        <div id="volumeChart" class="bar-chart"></div>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">🕯️ Candlestick Pattern</div>
+                        <div id="candleChart" class="candle-chart"></div>
+                    </div>
+                    <div class="summary-text" id="priceSummary"></div>
+                    <table id="priceTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Close</th>
+                                <th>Open</th>
+                                <th>High</th>
+                                <th>Low</th>
+                                <th>Volume</th>
+                                <th>Change</th>
+                            </tr>
+                        </thead>
+                        <tbody id="priceTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- News Sentiment Section -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon icon-news">📰</div>
+                    <h2>News Sentiment Analysis</h2>
+                </div>
+                <div class="input-group">
+                    <div class="form-row">
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label for="newsSymbol">Stock Symbol</label>
+                            <input type="text" id="newsSymbol" class="symbol-input" placeholder="e.g., TCS, RELIANCE, INFY" maxlength="10">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <button class="btn" style="grid-column: 1 / -1; width: 100%;" onclick="analyzeNews()">Analyze Sentiment</button>
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); text-align: center; margin: 10px 0 -10px;">
+                        Or paste news headlines manually in the textarea below
+                    </p>
+                </div>
+                <textarea id="newsInput" placeholder="Optional: Paste news headlines here...
+Example:
+Reliance Industries Sees Rs. 113.68 Crore Block Trade on NSE
+India's Reliance to buy up to 150,000 bpd of Russian oil..." style="height: 100px; margin-top: 15px;"></textarea>
+                
+                <div id="newsResults" class="results hidden">
+                    <div class="metric-grid" id="newsMetrics"></div>
+                    <div class="gauge-container">
+                        <div class="gauge">
+                            <div class="gauge-bg"></div>
+                            <div class="gauge-center"></div>
+                            <div class="gauge-needle" id="sentimentNeedle"></div>
+                            <div class="gauge-value" id="sentimentValue">50%</div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">📊 Sentiment Distribution</div>
+                        <div id="sentimentChart" class="bar-chart"></div>
+                    </div>
+                    <h4 style="margin: 20px 0 10px;">Headlines Analysis</h4>
+                    <div class="sentiment-list" id="sentimentList"></div>
+                </div>
+            </div>
+            
+            <!-- Financials Section -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon icon-finance">💰</div>
+                    <h2>Financial Data</h2>
+                </div>
+                <div class="input-group">
+                    <div class="form-row">
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label for="financialSymbol">Stock Symbol</label>
+                            <input type="text" id="financialSymbol" class="symbol-input" placeholder="e.g., TCS, RELIANCE, INFY" maxlength="10">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <button class="btn" style="grid-column: 1 / -1; width: 100%;" onclick="fetchFinancials()">Fetch Financial Data</button>
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); text-align: center; margin: 10px 0 -10px;">
+                        Or paste financial data manually below
+                    </p>
+                </div>
+                <textarea id="financialsInput" placeholder="Optional: Paste financial statement data here...
+Example:
+Revenue: 250,000 Cr
+Net Profit: 45,000 Cr
+EBITDA: 65,000 Cr" style="height: 100px; margin-top: 15px;"></textarea>
+                <button class="btn" onclick="parseFinancials()" style="margin-top: 10px;">Parse Manual Data</button>
+                
+                <div id="financialsResults" class="results hidden">
+                    <div class="financials-table">
+                        <table id="financialsTable">
+                            <thead>
+                                <tr>
+                                    <th>Metric</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody id="financialsTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Strategy Engine -->
+            <div class="card strategy-section">
+                <div class="card-header">
+                    <div class="card-icon icon-strategy">🎯</div>
+                    <h2>Strategy Engine & Recommendations</h2>
+                </div>
+                <button class="btn" onclick="generateStrategy()">Generate Strategy</button>
+                
+                <div id="strategyResults" class="results hidden">
+                    <div id="outcomeBoxes"></div>
+                    
+                    <div class="strategy-grid" id="strategyGrid">
+                        <!-- Strategy cards will be inserted here -->
+                    </div>
+                    
+                    <div class="insights-box" id="insightsBox">
+                        <h4>🔍 Key Insights</h4>
+                        <div id="keyInsights"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE_URL = 'http://127.0.0.1:5000/api';
+        let priceData = [];
+        let newsData = { sentiment: 'neutral', score: 50, headlines: [] };
+        let priceTrend = 'sideways';
+        
+        function parseNumber(str) {
+            if (!str) return 0;
+            return parseFloat(str.replace(/,/g, '').replace(/[^\d.-]/g, ''));
+        }
+        
+        function parseVolume(str) {
+            if (!str) return 0;
+            const num = parseFloat(str.replace(/[^\d.]/g, ''));
+            if (str.includes('M')) return num * 1000000;
+            if (str.includes('K')) return num * 1000;
+            if (str.includes('B')) return num * 1000000000;
+            return num;
+        }
+        
+        function formatVolume(num) {
+            if (num >= 1000000000) return (num / 1000000000).toFixed(2) + 'B';
+            if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(2) + 'K';
+            return num.toString();
+        }
+        
+        async function analyzePrice() {
+            const symbol = document.getElementById('stockSymbol').value.trim().toUpperCase();
+            const startDateInput = document.getElementById('startDate').value;
+            const endDateInput = document.getElementById('endDate').value;
+            
+            if (!symbol) {
+                alert('Please enter a stock symbol (e.g., TCS, RELIANCE)!');
+                return;
+            }
+            
+            // Set default dates if not provided
+            let endDate = new Date();
+            let startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000); // Last 7 days by default
+            
+            if (endDateInput) endDate = new Date(endDateInput);
+            if (startDateInput) startDate = new Date(startDateInput);
+            
+            const formatDate = (d) => d.toISOString().split('T')[0];
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/company/history?symbol=${symbol}&start=${formatDate(startDate)}&end=${formatDate(endDate)}`);
+                const data = await response.json();
+                
+                if (!Array.isArray(data) || data.length === 0) {
+                    alert('No data found for symbol: ' + symbol + '. Please check the symbol and try again.');
+                    return;
+                }
+                
+                priceData = data.map(d => ({
+                    date: d.Date,
+                    open: parseFloat(d.Open),
+                    close: parseFloat(d.Close),
+                    high: parseFloat(d.High),
+                    low: parseFloat(d.Low),
+                    volume: parseInt(d.Volume)
+                }));
+            } catch (error) {
+                alert('Error fetching data from API: ' + error.message);
+                return;
+            }
+            
+            priceData.sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            const closes = priceData.map(d => d.close);
+            const volumes = priceData.map(d => d.volume);
+            const changes = priceData.map((d, i) => i === 0 ? 0 : ((d.close - priceData[i-1].close) / priceData[i-1].close) * 100);
+            
+            const avgReturn = changes.reduce((a, b) => a + b, 0) / changes.length;
+            const avgVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+            const maxVolume = Math.max(...volumes);
+            const volumeSpike = maxVolume > avgVolume * 1.5;
+            
+            const firstClose = closes[0];
+            const lastClose = closes[closes.length - 1];
+            const priceChange = ((lastClose - firstClose) / firstClose) * 100;
+            
+            if (priceChange > 1) priceTrend = 'uptrend';
+            else if (priceChange < -1) priceTrend = 'downtrend';
+            else priceTrend = 'sideways';
+            
+            const volatility = Math.max(...closes) - Math.min(...closes);
+            const volatilityPct = (volatility / avgReturn) * 100;
+            
+            document.getElementById('priceMetrics').innerHTML = `
+                <div class="metric">
+                    <div class="metric-value ${priceTrend === 'up' ? 'positive' : priceTrend === 'down' ? 'negative' : 'neutral'}">
+                        ${priceTrend === 'up' ? '↑' : priceTrend === 'down' ? '↓' : '→'} ${priceTrend.toUpperCase()}
+                    </div>
+                    <div class="metric-label">5-Day Trend</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value ${priceChange >= 0 ? 'positive' : 'negative'}">${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}%</div>
+                    <div class="metric-label">Period Return</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value ${avgReturn >= 0 ? 'positive' : 'negative'}">${avgReturn >= 0 ? '+' : ''}${avgReturn.toFixed(2)}%</div>
+                    <div class="metric-label">Avg Daily Return</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">₹${lastClose.toLocaleString()}</div>
+                    <div class="metric-label">Latest Close</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value ${volumeSpike ? 'neutral' : ''}">${volumeSpike ? '⚠️ YES' : 'NO'}</div>
+                    <div class="metric-label">Volume Spike</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${formatVolume(avgVolume)}</div>
+                    <div class="metric-label">Avg Volume</div>
+                </div>
+            `;
+            
+            renderPriceChart(priceData);
+            renderVolumeChart(priceData, avgVolume);
+            renderCandleChart(priceData);
+            
+            const summaryClass = priceTrend === 'up' ? 'highlight-green' : priceTrend === 'down' ? 'highlight-red' : 'highlight-yellow';
+            document.getElementById('priceSummary').innerHTML = `
+                <strong>📊 Analysis Summary:</strong> The stock shows a 
+                <span class="${summaryClass}">${priceTrend.toUpperCase()} trend</span> over the last 5 trading days 
+                with a <span class="${priceChange >= 0 ? 'highlight-green' : 'highlight-red'}">${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}%</span> 
+                cumulative return. Average daily return is <span class="${avgReturn >= 0 ? 'highlight-green' : 'highlight-red'}">${avgReturn.toFixed(2)}%</span>.
+                ${volumeSpike ? '<span class="highlight-yellow">⚠️ Volume spike detected</span> - indicating heightened trading activity.' : 'Volume remains within normal range.'}
+                The price range is ₹${Math.min(...closes).toLocaleString()} to ₹${Math.max(...closes).toLocaleString()}.
+            `;
+            
+            let tableBody = '';
+            [...priceData].reverse().forEach(d => {
+                // Calculate change as (close - open) / open
+                const change = d.open ? ((d.close - d.open) / d.open) * 100 : 0;
+                const changeClass = change >= 0 ? 'positive' : 'negative';
+                tableBody += `
+                    <tr>
+                        <td>${d.date}</td>
+                        <td>₹${d.close.toLocaleString()}</td>
+                        <td>₹${d.open.toLocaleString()}</td>
+                        <td>₹${d.high.toLocaleString()}</td>
+                        <td>₹${d.low.toLocaleString()}</td>
+                        <td>${formatVolume(d.volume)}</td>
+                        <td class="${changeClass}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</td>
+                    </tr>
+                `;
+            });
+            document.getElementById('priceTableBody').innerHTML = tableBody;
+            
+            document.getElementById('priceResults').classList.remove('hidden');
+        }
+        
+        function renderPriceChart(data) {
+            const container = document.getElementById('priceChart');
+            const prices = data.map(d => d.close);
+            const min = Math.min(...prices) * 0.998;
+            const max = Math.max(...prices) * 1.002;
+            const range = max - min;
+            
+            let html = '<div class="y-axis">';
+            for (let i = 0; i <= 4; i++) {
+                const val = max - (range * i / 4);
+                html += `<span>${val.toFixed(0)}</span>`;
+            }
+            html += '</div><div class="price-line">';
+            
+            data.forEach((d, i) => {
+                const x = (i / (data.length - 1)) * 100;
+                const y = ((d.close - min) / range) * 100;
+                const color = i > 0 && d.close >= data[i-1].close ? 'var(--green)' : 'var(--red)';
+                
+                html += `<div class="price-point" style="left: ${x}%; bottom: ${y}%; background: ${color};" data-tooltip="₹${d.close.toLocaleString()} (${d.date})"></div>`;
+                
+                if (i > 0) {
+                    const prevX = ((i - 1) / (data.length - 1)) * 100;
+                    const prevY = ((data[i-1].close - min) / range) * 100;
+                    const dx = x - prevX;
+                    const dy = y - prevY;
+                    const length = Math.sqrt(dx * dx + dy * dy);
+                    const angle = Math.atan2(-dy, dx) * 180 / Math.PI;
+                    
+                    html += `<div class="chart-line" style="left: ${prevX}%; bottom: ${prevY}%; width: ${length}%; transform: rotate(${angle}deg); background: ${color};"></div>`;
+                }
+            });
+            
+            html += '</div><div class="x-axis">';
+            data.forEach(d => {
+                html += `<span>${d.date.split('-')[0]}</span>`;
+            });
+            html += '</div>';
+            
+            container.innerHTML = html;
+        }
+        
+        function renderVolumeChart(data, avgVolume) {
+            const container = document.getElementById('volumeChart');
+            const maxVol = Math.max(...data.map(d => d.volume));
+            
+            let html = '';
+            data.forEach(d => {
+                const height = (d.volume / maxVol) * 130;
+                const isSpike = d.volume > avgVolume * 1.5;
+                const color = isSpike ? 'var(--yellow)' : 'var(--blue)';
+                
+                html += `
+                    <div class="bar-wrapper">
+                        <div class="bar-value" style="color: ${color}">${formatVolume(d.volume)}</div>
+                        <div class="bar" style="height: ${height}px; background: ${color};"></div>
+                        <div class="bar-label">${d.date.split('-')[0]}</div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        function renderCandleChart(data) {
+            const container = document.getElementById('candleChart');
+            const allPrices = data.flatMap(d => [d.high, d.low]);
+            const min = Math.min(...allPrices);
+            const max = Math.max(...allPrices);
+            const range = max - min;
+            
+            let html = '';
+            data.forEach(d => {
+                const isBullish = d.close >= d.open;
+                const color = isBullish ? 'var(--green)' : 'var(--red)';
+                
+                const wickTop = ((max - d.high) / range) * 120;
+                const wickHeight = ((d.high - d.low) / range) * 120;
+                const bodyTop = ((max - Math.max(d.open, d.close)) / range) * 120;
+                const bodyHeight = Math.max((Math.abs(d.close - d.open) / range) * 120, 5);
+                
+                html += `
+                    <div class="candle" style="height: 140px;">
+                        <div style="height: ${wickTop}px;"></div>
+                        <div class="candle-wick" style="height: ${wickHeight}px; position: relative;">
+                            <div class="candle-body" style="position: absolute; top: ${bodyTop - wickTop}px; left: -9px; height: ${bodyHeight}px; background: ${color}; ${isBullish ? '' : 'opacity: 0.8;'}"></div>
+                        </div>
+                        <div class="candle-label">${d.date.split('-')[0]}</div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        async function analyzeNews() {
+            const symbol = document.getElementById('newsSymbol').value.trim().toUpperCase();
+            const manualNews = document.getElementById('newsInput').value.trim();
+            
+            let headlines = [];
+            
+            // If symbol is provided, fetch news from API
+            if (symbol) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/news/analyze-full?symbol=${symbol}`);
+                    const result = await response.json();
+                    
+                    if (result.error) {
+                        // If API fails, try manual analysis mode
+                        if (manualNews) {
+                            analyzeManualNews(manualNews);
+                            return;
+                        }
+                        alert('Error: ' + result.error);
+                        return;
+                    }
+                    
+                    // Extract headlines from news
+                    if (result.news && Array.isArray(result.news)) {
+                        headlines = result.news.map(item => item.title || item.content?.title || '').filter(h => h);
+                    }
+                    
+                    // Use FinBERT analysis if available
+                    if (result.analysis && result.analysis.details) {
+                        const analyzed = result.analysis.details;
+                        const positiveCount = analyzed.filter(h => h.sentiment === 'Positive').length;
+                        const negativeCount = analyzed.filter(h => h.sentiment === 'Negative').length;
+                        const neutralCount = analyzed.filter(h => h.sentiment === 'Neutral').length;
+                        
+                        let overallSentiment = 'neutral';
+                        if (positiveCount > negativeCount && positiveCount > neutralCount) overallSentiment = 'positive';
+                        else if (negativeCount > positiveCount && negativeCount > neutralCount) overallSentiment = 'negative';
+                        
+                        newsData = {
+                            sentiment: overallSentiment,
+                            score: positiveCount > negativeCount ? 60 + (positiveCount * 5) : 40 - (negativeCount * 5),
+                            headlines: analyzed.map(h => ({
+                                text: h.headline.substring(0, 150),
+                                sentiment: h.sentiment.toLowerCase(),
+                                confidence: h.confidence || 0.8
+                            })),
+                            positiveCount,
+                            negativeCount,
+                            neutralCount
+                        };
+                    }
+                } catch (error) {
+                    alert('Error fetching news: ' + error.message);
+                    return;
+                }
+            } else if (manualNews) {
+                // Analyze manually pasted news
+                analyzeManualNews(manualNews);
+                return;
+            } else {
+                alert('Please enter a stock symbol or paste news headlines!');
+                return;
+            }
+            
+            const confidence = Math.min(100, Math.round(Math.abs(newsData.score - 50) * 2 + 30));
+            const overallSentiment = newsData.sentiment;
+            
+            displayNewsResults(confidence, overallSentiment, newsData.headlines);
+        }
+        
+        function displayNewsResults(confidence, overallSentiment, headlines) {
+            document.getElementById('newsMetrics').innerHTML = `
+                <div class="metric">
+                    <div class="metric-value">
+                        <span class="badge badge-${overallSentiment}">${overallSentiment.toUpperCase()}</span>
+                    </div>
+                    <div class="metric-label">Overall Sentiment</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${headlines.length}</div>
+                    <div class="metric-label">Headlines Analyzed</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value positive">${newsData.positiveCount}</div>
+                    <div class="metric-label">Positive</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value negative">${newsData.negativeCount}</div>
+                    <div class="metric-label">Negative</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value neutral">${newsData.neutralCount}</div>
+                    <div class="metric-label">Neutral</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${confidence}%</div>
+                    <div class="metric-label">Confidence</div>
+                </div>
+            `;
+            
+            const needleAngle = -90 + (newsData.score / 100) * 180;
+            document.getElementById('sentimentNeedle').style.transform = `rotate(${needleAngle}deg)`;
+            document.getElementById('sentimentValue').textContent = newsData.score + '%';
+            document.getElementById('sentimentValue').className = `gauge-value ${overallSentiment === 'positive' ? 'positive' : overallSentiment === 'negative' ? 'negative' : 'neutral'}`;
+            
+            const maxCount = Math.max(newsData.positiveCount, newsData.negativeCount, newsData.neutralCount, 1);
+            document.getElementById('sentimentChart').innerHTML = `
+                <div class="bar-wrapper">
+                    <div class="bar-value positive">${newsData.positiveCount}</div>
+                    <div class="bar" style="height: ${(newsData.positiveCount / maxCount) * 130}px; background: var(--green);"></div>
+                    <div class="bar-label">Positive</div>
+                </div>
+                <div class="bar-wrapper">
+                    <div class="bar-value neutral">${newsData.neutralCount}</div>
+                    <div class="bar" style="height: ${(newsData.neutralCount / maxCount) * 130}px; background: var(--yellow);"></div>
+                    <div class="bar-label">Neutral</div>
+                </div>
+                <div class="bar-wrapper">
+                    <div class="bar-value negative">${newsData.negativeCount}</div>
+                    <div class="bar" style="height: ${(newsData.negativeCount / maxCount) * 130}px; background: var(--red);"></div>
+                    <div class="bar-label">Negative</div>
+                </div>
+            `;
+            
+            let listHtml = '';
+            headlines.forEach(h => {
+                listHtml += `
+                    <div class="sentiment-item ${h.sentiment}">
+                        <div class="sentiment-headline">${h.text}</div>
+                        <div class="sentiment-score">
+                            <span class="badge badge-${h.sentiment}">${h.sentiment.toUpperCase()}</span>
+                            ${h.keywords && h.keywords.length > 0 ? `<span style="margin-left: 10px; font-size: 0.7rem;">Keywords: ${h.keywords.slice(0, 5).join(', ')}</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('sentimentList').innerHTML = listHtml;
+            
+            document.getElementById('newsResults').classList.remove('hidden');
+        }
+        
+        async function fetchFinancials() {
+            const symbol = document.getElementById('financialSymbol').value.trim().toUpperCase();
+            
+            if (!symbol) {
+                alert('Please enter a stock symbol (e.g., TCS, RELIANCE)!');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/company/financials?symbol=${symbol}`);
+                const data = await response.json();
+                
+                if (!data || Object.keys(data).length === 0) {
+                    alert('No financial data found for symbol: ' + symbol);
+                    return;
+                }
+                
+                let tableHtml = '';
+                
+                // Display all financial metrics
+                for (const [key, value] of Object.entries(data)) {
+                    if (value !== null && value !== undefined) {
+                        const displayValue = typeof value === 'number' ? 
+                            (value > 1000000000 ? 
+                                (value / 1000000000).toFixed(2) + ' B' : 
+                            value > 10000 ? 
+                                (value / 10000000).toFixed(2) + ' Cr' : 
+                            value.toLocaleString('en-IN')) : 
+                            value;
+                        
+                        tableHtml += `
+                            <tr>
+                                <td><strong>${key}</strong></td>
+                                <td>${displayValue}</td>
+                            </tr>
+                        `;
+                    }
+                }
+                
+                if (!tableHtml) {
+                    alert('No valid financial data to display');
+                    return;
+                }
+                
+                document.getElementById('financialsTableBody').innerHTML = tableHtml;
+                document.getElementById('financialsResults').classList.remove('hidden');
+                
+            } catch (error) {
+                alert('Error fetching financial data: ' + error.message);
+            }
+        }
+        
+        function parseFinancials() {
+            const input = document.getElementById('financialsInput').value.trim();
+            if (!input) {
+                alert('Please paste financial data first!');
+                return;
+            }
+            
+            const lines = input.split('\n').filter(l => l.trim());
+            let tableHtml = '';
+            
+            lines.forEach(line => {
+                const parts = line.split(/[:\t]/).map(p => p.trim()).filter(p => p);
+                if (parts.length >= 2) {
+                    tableHtml += `
+                        <tr>
+                            <td>${parts[0]}</td>
+                            <td>${parts.slice(1).join(' ')}</td>
+                        </tr>
+                    `;
+                } else if (parts.length === 1) {
+                    const words = line.trim().split(/\s+/);
+                    if (words.length > 1) {
+                        const lastWord = words.pop();
+                        tableHtml += `
+                            <tr>
+                                <td>${words.join(' ')}</td>
+                                <td>${lastWord}</td>
+                            </tr>
+                        `;
+                    } else {
+                        tableHtml += `
+                            <tr>
+                                <td colspan="2" style="font-weight: bold; background: var(--bg-primary);">${line}</td>
+                            </tr>
+                        `;
+                    }
+                }
+            });
+            
+            document.getElementById('financialsTableBody').innerHTML = tableHtml;
+            document.getElementById('financialsResults').classList.remove('hidden');
+        }
+        
+        function generateStrategy() {
+            if (priceData.length === 0 && newsData.headlines.length === 0) {
+                alert('Please analyze price data and/or news sentiment first!');
+                return;
+            }
+            
+            const trend = priceTrend;
+            const sentiment = newsData.sentiment;
+            
+            let outlook = 'neutral';
+            let bullishProb = 33;
+            let bearishProb = 33;
+            let sidewaysProb = 34;
+            
+            if (trend === 'uptrend' && sentiment === 'positive') {
+                outlook = 'bullish';
+                bullishProb = 70;
+                bearishProb = 10;
+                sidewaysProb = 20;
+            } else if (trend === 'uptrend' && sentiment === 'neutral') {
+                outlook = 'moderately-bullish';
+                bullishProb = 55;
+                bearishProb = 15;
+                sidewaysProb = 30;
+            } else if (trend === 'uptrend' && sentiment === 'negative') {
+                outlook = 'cautious';
+                bullishProb = 35;
+                bearishProb = 35;
+                sidewaysProb = 30;
+            } else if (trend === 'downtrend' && sentiment === 'negative') {
+                outlook = 'bearish';
+                bullishProb = 10;
+                bearishProb = 70;
+                sidewaysProb = 20;
+            } else if (trend === 'downtrend' && sentiment === 'neutral') {
+                outlook = 'moderately-bearish';
+                bullishProb = 15;
+                bearishProb = 55;
+                sidewaysProb = 30;
+            } else if (trend === 'downtrend' && sentiment === 'positive') {
+                outlook = 'mixed';
+                bullishProb = 35;
+                bearishProb = 35;
+                sidewaysProb = 30;
+            } else if (trend === 'sideways') {
+                outlook = 'consolidation';
+                bullishProb = 30;
+                bearishProb = 30;
+                sidewaysProb = 40;
+            }
+            
+            const latestPrice = priceData.length > 0 ? priceData[priceData.length - 1].close : 0;
+            
+            document.getElementById('outcomeBoxes').innerHTML = `
+                <div class="outcome-box outcome-bullish">
+                    <h3 class="positive">📈 Bullish Scenario</h3>
+                    <p>Continuation of upward momentum with potential breakout above recent highs.</p>
+                    ${latestPrice > 0 ? `<p><strong>Target Range:</strong> ₹${(latestPrice * 1.03).toFixed(2)} - ₹${(latestPrice * 1.05).toFixed(2)}</p>` : ''}
+                    <div class="probability-bar">
+                        <div class="probability-fill" style="width: ${bullishProb}%; background: var(--green);"></div>
+                    </div>
+                    <p style="margin-top: 5px; font-size: 0.85rem;">Probability: <strong class="positive">${bullishProb}%</strong></p>
+                </div>
+                
+                <div class="outcome-box outcome-bearish">
+                    <h3 class="negative">📉 Bearish Scenario</h3>
+                    <p>Potential correction or continuation of downward pressure with support testing.</p>
+                    ${latestPrice > 0 ? `<p><strong>Support Range:</strong> ₹${(latestPrice * 0.95).toFixed(2)} - ₹${(latestPrice * 0.97).toFixed(2)}</p>` : ''}
+                    <div class="probability-bar">
+                        <div class="probability-fill" style="width: ${bearishProb}%; background: var(--red);"></div>
+                    </div>
+                    <p style="margin-top: 5px; font-size: 0.85rem;">Probability: <strong class="negative">${bearishProb}%</strong></p>
+                </div>
+                
+                <div class="outcome-box outcome-sideways">
+                    <h3 class="neutral">↔️ Consolidation Scenario</h3>
+                    <p>Range-bound trading with mixed signals. Wait for clearer direction before taking positions.</p>
+                    ${latestPrice > 0 ? `<p><strong>Expected Range:</strong> ₹${(latestPrice * 0.98).toFixed(2)} - ₹${(latestPrice * 1.02).toFixed(2)}</p>` : ''}
+                    <div class="probability-bar">
+                        <div class="probability-fill" style="width: ${sidewaysProb}%; background: var(--yellow);"></div>
+                    </div>
+                    <p style="margin-top: 5px; font-size: 0.85rem;">Probability: <strong class="neutral">${sidewaysProb}%</strong></p>
+                </div>
+            `;
+            
+            const strategies = {
+                shortTerm: getShortTermStrategy(outlook, trend, sentiment),
+                swing: getSwingStrategy(outlook, trend, sentiment),
+                longTerm: getLongTermStrategy(outlook, trend, sentiment)
+            };
+            
+            document.getElementById('strategyGrid').innerHTML = `
+                <div class="strategy-card">
+                    <h3>⚡ Short-Term Trader (1-5 Days)</h3>
+                    <ul>
+                        ${strategies.shortTerm.map(s => `<li><span>${s.icon}</span> ${s.text}</li>`).join('')}
+                    </ul>
+                </div>
+                
+                <div class="strategy-card">
+                    <h3>🔄 Swing Trader (1-4 Weeks)</h3>
+                    <ul>
+                        ${strategies.swing.map(s => `<li><span>${s.icon}</span> ${s.text}</li>`).join('')}
+                    </ul>
+                </div>
+                
+                <div class="strategy-card">
+                    <h3>🏦 Long-Term Investor (Months+)</h3>
+                    <ul>
+                        ${strategies.longTerm.map(s => `<li><span>${s.icon}</span> ${s.text}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+            
+            const insights = generateInsights(outlook, trend, sentiment, priceData, newsData);
+            document.getElementById('keyInsights').innerHTML = insights.map(i => `
+                <div class="insight-item">
+                    <span class="insight-icon">${i.icon}</span>
+                    <div>
+                        <strong>${i.title}</strong>
+                        <p style="font-size: 0.9rem; color: var(--text-secondary); margin-top: 5px;">${i.text}</p>
+                    </div>
+                </div>
+            `).join('');
+            
+            document.getElementById('strategyResults').classList.remove('hidden');
+        }
+        
+        function getShortTermStrategy(outlook, trend, sentiment) {
+            const strategies = [];
+            
+            if (outlook === 'bullish' || outlook === 'moderately-bullish') {
+                strategies.push({ icon: '🟢', text: 'Consider long positions with tight stop-loss below recent swing low' });
+                strategies.push({ icon: '🎯', text: 'Book partial profits at 2-3% gain, let rest ride with trailing stop' });
+                strategies.push({ icon: '⚠️', text: 'Watch for volume confirmation on breakouts' });
+            } else if (outlook === 'bearish' || outlook === 'moderately-bearish') {
+                strategies.push({ icon: '🔴', text: 'Avoid new long positions; existing holders consider reducing exposure' });
+                strategies.push({ icon: '🛡️', text: 'Set strict stop-losses; consider hedging with options if available' });
+                strategies.push({ icon: '👀', text: 'Wait for reversal signals before re-entry' });
+            } else {
+                strategies.push({ icon: '⏸️', text: 'Stay on sidelines; avoid taking directional bets' });
+                strategies.push({ icon: '📊', text: 'Monitor for breakout above/below range for entry signals' });
+                strategies.push({ icon: '💰', text: 'If trading, focus on mean-reversion strategies within range' });
+            }
+            
+            return strategies;
+        }
+        
+        function getSwingStrategy(outlook, trend, sentiment) {
+            const strategies = [];
+            
+            if (outlook === 'bullish' || outlook === 'moderately-bullish') {
+                strategies.push({ icon: '📈', text: 'Accumulate on dips near support levels' });
+                strategies.push({ icon: '🎯', text: 'Target 5-10% upside with stop-loss at 3-5% below entry' });
+                strategies.push({ icon: '📰', text: 'Positive news flow supports holding positions' });
+            } else if (outlook === 'bearish' || outlook === 'moderately-bearish') {
+                strategies.push({ icon: '📉', text: 'Reduce positions on rallies; avoid catching falling knives' });
+                strategies.push({ icon: '🔍', text: 'Look for support levels that may offer bounce opportunities' });
+                strategies.push({ icon: '⏳', text: 'Wait for sentiment improvement before building positions' });
+            } else {
+                strategies.push({ icon: '📊', text: 'Trade the range: buy near support, sell near resistance' });
+                strategies.push({ icon: '⚖️', text: 'Keep position sizes smaller due to uncertain direction' });
+                strategies.push({ icon: '🔔', text: 'Set alerts for breakout levels to capture next move' });
+            }
+            
+            if (trend === 'uptrend') {
+                strategies[strategies.length - 1] = { icon: '🟢', text: 'Uptrend favors long positions over shorts' };
+            } else if (trend === 'downtrend') {
+                strategies[strategies.length - 1] = { icon: '🔴', text: 'Downtrend favors short positions over longs' };
+            }
+            
+            return strategies;
+        }
+        
+        function getLongTermStrategy(outlook, trend, sentiment) {
+            const strategies = [];
+            
+            if (outlook === 'bullish' || outlook === 'moderately-bullish') {
+                strategies.push({ icon: '✅', text: 'Favorable conditions for systematic accumulation (SIP approach)' });
+                strategies.push({ icon: '💎', text: 'Hold existing positions; add on significant corrections' });
+                strategies.push({ icon: '📊', text: 'Review fundamentals - ensure thesis remains intact' });
+            } else if (outlook === 'bearish' || outlook === 'moderately-bearish') {
+                strategies.push({ icon: '⚠️', text: 'Pause fresh investments; wait for better entry points' });
+                strategies.push({ icon: '🔬', text: 'Use this period to research and build watchlist' });
+                strategies.push({ icon: '💰', text: 'Keep cash ready to deploy when sentiment improves' });
+            } else {
+                strategies.push({ icon: '📅', text: 'Continue SIP if already invested; maintains cost averaging' });
+                strategies.push({ icon: '🎯', text: 'Focus on quality; consolidation often precedes big moves' });
+                strategies.push({ icon: '📋', text: 'Review portfolio allocation; rebalance if needed' });
+            }
+            
+            return strategies;
+        }
+        
+        function analyzeManualNews(input) {
+            const positiveKeywords = ['buy', 'buying', 'growth', 'record', 'profit', 'profits', 'investment', 'upgrade', 'expansion', 'surge', 'gain', 'gains', 'positive', 'bullish', 'rise', 'rising', 'up', 'boost', 'strong', 'strength', 'beat', 'beats', 'outperform', 'rally', 'recover', 'recovery', 'opportunity', 'breakthrough', 'success', 'successful', 'deal', 'partnership', 'acquisition', 'launch', 'innovative', 'dividend', 'bonus'];
+            
+            const negativeKeywords = ['fall', 'falls', 'falling', 'loss', 'losses', 'slump', 'wiped', 'downgrade', 'risk', 'risks', 'decline', 'declining', 'drop', 'drops', 'crash', 'negative', 'bearish', 'weak', 'weakness', 'miss', 'misses', 'underperform', 'sell', 'selling', 'selloff', 'concern', 'concerns', 'warning', 'danger', 'trouble', 'problem', 'crisis', 'debt', 'lawsuit', 'fraud', 'investigation', 'penalty', 'fine', 'cut', 'cuts', 'layoff', 'layoffs', 'downside'];
+            
+            const lines = input.split('\n').filter(l => l.trim().length > 10);
+            const headlines = [];
+            
+            let totalPositive = 0;
+            let totalNegative = 0;
+            
+            lines.forEach(line => {
+                const lowerLine = line.toLowerCase();
+                let posCount = 0;
+                let negCount = 0;
+                const foundPositive = [];
+                const foundNegative = [];
+                
+                positiveKeywords.forEach(kw => {
+                    const regex = new RegExp('\\b' + kw + '\\b', 'gi');
+                    const matches = lowerLine.match(regex);
+                    if (matches) {
+                        posCount += matches.length;
+                        foundPositive.push(kw);
+                    }
+                });
+                
+                negativeKeywords.forEach(kw => {
+                    const regex = new RegExp('\\b' + kw + '\\b', 'gi');
+                    const matches = lowerLine.match(regex);
+                    if (matches) {
+                        negCount += matches.length;
+                        foundNegative.push(kw);
+                    }
+                });
+                
+                let sentiment = 'neutral';
+                if (posCount > negCount) sentiment = 'positive';
+                else if (negCount > posCount) sentiment = 'negative';
+                
+                totalPositive += posCount;
+                totalNegative += negCount;
+                
+                headlines.push({
+                    text: line.substring(0, 150) + (line.length > 150 ? '...' : ''),
+                    sentiment,
+                    posCount,
+                    negCount,
+                    keywords: [...foundPositive.map(k => '+' + k), ...foundNegative.map(k => '-' + k)]
+                });
+            });
+            
+            const total = totalPositive + totalNegative || 1;
+            const positiveRatio = totalPositive / total;
+            const sentimentScore = Math.round(50 + (positiveRatio - 0.5) * 100);
+            
+            let overallSentiment = 'neutral';
+            if (sentimentScore > 60) overallSentiment = 'positive';
+            else if (sentimentScore < 40) overallSentiment = 'negative';
+            
+            newsData = {
+                sentiment: overallSentiment,
+                score: sentimentScore,
+                headlines,
+                positiveCount: headlines.filter(h => h.sentiment === 'positive').length,
+                negativeCount: headlines.filter(h => h.sentiment === 'negative').length,
+                neutralCount: headlines.filter(h => h.sentiment === 'neutral').length
+            };
+            
+            const confidence = Math.min(100, Math.round(Math.abs(sentimentScore - 50) * 2 + 30));
+            
+            displayNewsResults(confidence, overallSentiment, headlines);
+        }
+        
+        function displayNewsResults(confidence, overallSentiment, headlines) {
+            document.getElementById('newsMetrics').innerHTML = `
+                <div class="metric">
+                    <div class="metric-value">
+                        <span class="badge badge-${overallSentiment}">${overallSentiment.toUpperCase()}</span>
+                    </div>
+                    <div class="metric-label">Overall Sentiment</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${headlines.length}</div>
+                    <div class="metric-label">Headlines Analyzed</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value positive">${newsData.positiveCount}</div>
+                    <div class="metric-label">Positive</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value negative">${newsData.negativeCount}</div>
+                    <div class="metric-label">Negative</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value neutral">${newsData.neutralCount}</div>
+                    <div class="metric-label">Neutral</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${confidence}%</div>
+                    <div class="metric-label">Confidence</div>
+                </div>
+            `;
+            
+            const needleAngle = -90 + (newsData.score / 100) * 180;
+            document.getElementById('sentimentNeedle').style.transform = `rotate(${needleAngle}deg)`;
+            document.getElementById('sentimentValue').textContent = newsData.score + '%';
+            document.getElementById('sentimentValue').className = `gauge-value ${overallSentiment === 'positive' ? 'positive' : overallSentiment === 'negative' ? 'negative' : 'neutral'}`;
+            
+            const maxCount = Math.max(newsData.positiveCount, newsData.negativeCount, newsData.neutralCount, 1);
+            document.getElementById('sentimentChart').innerHTML = `
+                <div class="bar-wrapper">
+                    <div class="bar-value positive">${newsData.positiveCount}</div>
+                    <div class="bar" style="height: ${(newsData.positiveCount / maxCount) * 130}px; background: var(--green);"></div>
+                    <div class="bar-label">Positive</div>
+                </div>
+                <div class="bar-wrapper">
+                    <div class="bar-value neutral">${newsData.neutralCount}</div>
+                    <div class="bar" style="height: ${(newsData.neutralCount / maxCount) * 130}px; background: var(--yellow);"></div>
+                    <div class="bar-label">Neutral</div>
+                </div>
+                <div class="bar-wrapper">
+                    <div class="bar-value negative">${newsData.negativeCount}</div>
+                    <div class="bar" style="height: ${(newsData.negativeCount / maxCount) * 130}px; background: var(--red);"></div>
+                    <div class="bar-label">Negative</div>
+                </div>
+            `;
+            
+            let listHtml = '';
+            headlines.forEach(h => {
+                listHtml += `
+                    <div class="sentiment-item ${h.sentiment}">
+                        <div class="sentiment-headline">${h.text}</div>
+                        <div class="sentiment-score">
+                            <span class="badge badge-${h.sentiment}">${h.sentiment.toUpperCase()}</span>
+                            ${h.keywords && h.keywords.length > 0 ? `<span style="margin-left: 10px; font-size: 0.7rem;">Keywords: ${h.keywords.slice(0, 5).join(', ')}</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('sentimentList').innerHTML = listHtml;
+            
+            document.getElementById('newsResults').classList.remove('hidden');
+        }
+        
+        function generateInsights(outlook, trend, sentiment, priceData, newsData) {
+            const insights = [];
+            
+            insights.push({
+                icon: trend === 'uptrend' ? '📈' : trend === 'downtrend' ? '📉' : '↔️',
+                title: `Price Trend: ${trend.toUpperCase()}`,
+                text: trend === 'uptrend' ? 'The stock is showing upward momentum. Higher highs and higher lows suggest buyers are in control.' :
+                      trend === 'downtrend' ? 'The stock is under selling pressure. Lower highs and lower lows indicate bears dominating.' :
+                      'Price is consolidating in a range. A breakout in either direction could trigger the next trend.'
+            });
+            
+            if (newsData.headlines.length > 0) {
+                insights.push({
+                    icon: sentiment === 'positive' ? '😊' : sentiment === 'negative' ? '😟' : '😐',
+                    title: `News Sentiment: ${sentiment.toUpperCase()}`,
+                    text: sentiment === 'positive' ? 'News flow is supportive with more positive headlines. This could attract buyers.' :
+                          sentiment === 'negative' ? 'Negative news dominating could create headwinds and pressure on price.' :
+                          'Mixed news signals. Market may focus on upcoming catalysts for direction.'
+                });
+            }
+            
+            if (priceData.length > 0) {
+                const volumes = priceData.map(d => d.volume);
+                const avgVol = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+                const lastVol = volumes[volumes.length - 1];
+                
+                if (lastVol > avgVol * 1.5) {
+                    insights.push({
+                        icon: '📊',
+                        title: 'Volume Alert',
+                        text: 'Recent volume significantly above average. High volume moves tend to have more follow-through.'
+                    });
+                }
+            }
+            
+            insights.push({
+                icon: '🎯',
+                title: `Overall Outlook: ${outlook.toUpperCase()}`,
+                text: outlook === 'bullish' ? 'Both technicals and sentiment align positively. Favorable risk-reward for long positions.' :
+                      outlook === 'bearish' ? 'Caution warranted. Both price action and sentiment suggest downside risk.' :
+                      'Conflicting signals suggest patience. Wait for clearer direction before committing capital.'
+            });
+            
+            return insights;
+        }
+    </script>
+</body>
+</html>
