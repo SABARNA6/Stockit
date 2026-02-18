@@ -81,41 +81,38 @@ def financials():
     data = functions.get_finacial_metric(symbol)
     return jsonify(data)
 
-@app.route('/api/company/news', methods=['GET'])
-def news():
-    """
-    Get news for a symbol.
-    Query Params: symbol
-    Example: /api/company/news?symbol=TATAMOTORS
-    """
-    symbol = request.args.get('symbol')
-    if not symbol:
-        return jsonify({"error": "Symbol parameter is required"}), 400
+# @app.route('/api/company/news', methods=['GET'])
+# def news():
+#     """
+#     Get news for a symbol.
+#     Query Params: symbol
+#     Example: /api/company/news?symbol=TATAMOTORS
+#     """
+#     symbol = request.args.get('symbol')
+#     if not symbol:
+#         return jsonify({"error": "Symbol parameter is required"}), 400
 
-    data = functions.get_news_data(symbol)
-    return jsonify(data)
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+#     data = functions.get_news_data(symbol)
+#     return jsonify(data)
 
 
 # --- New Endpoints ---
 
-@app.route('/api/news/knowivate', methods=['GET'])
-def get_knowivate_news():
-    """
-    Get news from Knowivate API.
-    Query Params: query (optional)
-    Example: /api/news/knowivate?query=stock market
-    """
-    query = request.args.get('query', '')
-    url = f"https://developers.knowivate.com/news/get-news?query={query}"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        return jsonify(response.json())
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# @app.route('/api/news/knowivate', methods=['GET'])
+# def get_knowivate_news():
+#     """
+#     Get news from Knowivate API.
+#     Query Params: query (optional)
+#     Example: /api/news/knowivate?query=stock market
+#     """
+#     query = request.args.get('query', '')
+#     url = f"https://developers.knowivate.com/news/get-news?query={query}"
+#     try:
+#         response = requests.get(url)
+#         response.raise_for_status()
+#         return jsonify(response.json())
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/news/analyze-full', methods=['GET'])
@@ -133,17 +130,23 @@ def analyze_full_news():
         news_data = functions.get_news_data(symbol)
         
         if not news_data:
-            return jsonify({"error": "No news found for this symbol"}), 404
-        
+            return jsonify({"error": "No news found for this symbol"}), 200
+        # news_data = functions.get_company_news(symbol)  # symbol OR company name
         headlines = []
         for item in news_data:
-            title = item.get('title', '')
+            # Direct title
+            title = item.get('title')
+            
+            # Or nested under 'content'
+            if not title and 'content' in item:
+                title = item['content'].get('title')
+            
             if title:
                 headlines.append(title)
-        
+
         if not headlines:
             return jsonify({"error": "No headlines found"}), 404
-        
+
         analyzed = functions.analyze_headlines_with_finbert(headlines)
         
         return jsonify({
@@ -184,3 +187,6 @@ def analyze_news_sentiment():
         return jsonify(sentiment)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host="0.0.0.0",debug=True, port=5000)
