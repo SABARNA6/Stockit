@@ -18,8 +18,12 @@ if sys.version_info >= (3, 8):
     except ImportError:
         pass
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+app = Flask(__name__, static_folder='../client', static_url_path='')
+CORS(app)
+
+@app.route('/')
+def index():
+    return app.send_static_file('index.html')
 
 @app.route('/api/nifty50', methods=['GET'])
 def nifty50():
@@ -189,4 +193,6 @@ def analyze_news_sentiment():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0",debug=True, port=5000)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", debug=False, port=port)
