@@ -1,6 +1,12 @@
 from nsepython import nsefetch
 import pandas as pd
 import yfinance as yf
+import requests
+import os
+from gradio_client import Client
+from dotenv import load_dotenv
+load_dotenv()
+NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 def get_nifty50_details():
     try:
         url = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050"
@@ -107,6 +113,81 @@ def get_finacial_metric(symbol):
     except Exception as e:
         print(f"Error fetching financial metrics for {symbol}: {e}")
         return {}
+    
+def get_company_news(company_name):
+    """
+    Fetch news from NewsAPI using company name
+    """
+
+    try:
+        url = "https://newsapi.org/v2/everything"
+
+        params = {
+            "q": company_name,
+            "language": "en",
+            "sortBy": "publishedAt",
+            "pageSize": 5,
+            "apiKey": NEWS_API_KEY
+        }
+
+        response = requests.get(url, params=params)
+
+        print("Status Code:", response.status_code)
+        print("Response:", response.text)  # 🔥 Debug
+
+        data = response.json()
+
+        if data.get("status") != "ok":
+            print("NewsAPI error:", data)
+            return []
+
+        return data.get("articles", [])
+
+    except Exception as e:
+        print(f"Error fetching news: {e}")
+        return []
+def analyze_headlines_with_finbert(headlines):
+    """
+    Analyze list of headlines using FinBERT
+    """
+
+    try:
+        client = Client("Sabarna6/FinBERT_FinancialSentimentAnalysis")
+
+        sentiment_count = {"Positive": 0, "Negative": 0, "Neutral": 0}
+        analyzed = []
+
+        for headline in headlines:
+            result = client.predict(
+                text=headline,
+                api_name="/predict"
+            )
+
+            # HF returns: [scores_dict, sentiment_string]
+            scores = result[0]
+            label = result[1]
+
+            if label in sentiment_count:
+                sentiment_count[label] += 1
+
+            analyzed.append({
+                "headline": headline,
+                "sentiment": label,
+                "confidence": scores.get(label)
+            })
+
+        overall = max(sentiment_count, key=sentiment_count.get)
+
+        return {
+            "summary": sentiment_count,
+            "overall_sentiment": overall,
+            "details": analyzed
+        }
+
+    except Exception as e:
+        print(f"Error analyzing headlines: {e}")
+        return {}
+
 def get_news_data(symbol):
     try:
         # Add .NS suffix for NSE stocks if not present

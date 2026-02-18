@@ -2,6 +2,22 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import functions
 
+# For Knowivate News API
+import requests
+
+# For FinBERT Sentiment Analysis
+import asyncio
+import sys
+import importlib
+import types
+
+gradio_client = None
+if sys.version_info >= (3, 8):
+    try:
+        gradio_client = importlib.import_module('gradio_client')
+    except ImportError:
+        pass
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
@@ -81,3 +97,90 @@ def news():
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
+
+# --- New Endpoints ---
+
+@app.route('/api/news/knowivate', methods=['GET'])
+def get_knowivate_news():
+    """
+    Get news from Knowivate API.
+    Query Params: query (optional)
+    Example: /api/news/knowivate?query=stock market
+    """
+    query = request.args.get('query', '')
+    url = f"https://developers.knowivate.com/news/get-news?query={query}"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        return jsonify(response.json())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/news/analyze-full', methods=['GET'])
+def analyze_full_news():
+    """
+    Get news for a symbol and analyze with FinBERT.
+    Query Params: symbol
+    Example: /api/news/analyze-full?symbol=TCS
+    """
+    symbol = request.args.get('symbol')
+    if not symbol:
+        return jsonify({"error": "Symbol parameter is required"}), 400
+    
+    try:
+        news_data = functions.get_news_data(symbol)
+        
+        if not news_data:
+            return jsonify({"error": "No news found for this symbol"}), 404
+        
+        headlines = []
+        for item in news_data:
+            title = item.get('title', '')
+            if title:
+                headlines.append(title)
+        
+        if not headlines:
+            return jsonify({"error": "No headlines found"}), 404
+        
+        analyzed = functions.analyze_headlines_with_finbert(headlines)
+        
+        return jsonify({
+            "symbol": symbol,
+            "news": news_data,
+            "analysis": analyzed
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/news/analyze', methods=['POST'])
+def analyze_news_sentiment():
+    """
+    Analyze news sentiment using FinBERT (Gradio API).
+    Request JSON: { "text": "news text here" }
+    """
+    data = request.get_json()
+    if not data or 'text' not in data:
+        return jsonify({"error": "Missing 'text' in request body"}), 400
+
+    text = data['text']
+
+    # Use Gradio Client (async)
+    if gradio_client is None:
+        return jsonify({"error": "gradio_client not installed. Please install gradio_client."}), 500
+
+    async def analyze():
+        client = await gradio_client.Client.connect("Sabarna6/FinBERT_FinancialSentimentAnalysis")
+        result = await client.predict("/predict", {{"text": text}})
+        return result.data
+
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        sentiment = loop.run_until_complete(analyze())
+        return jsonify(sentiment)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
