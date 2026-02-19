@@ -1,0 +1,256 @@
+/* Loading Bar */
+.loading-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0%;
+    height: 3px;
+    background: linear-gradient(90deg, var(--info), var(--purple));
+    box-shadow: 0 0 10px rgba(88, 166, 255, 0.8);
+    z-index: 9999;
+    transition: width 0.3s ease;
+}
+
+.loading-bar.active {
+    animation: loadingBar 2s ease-in-out infinite;
+}
+
+@keyframes loadingBar {
+    0% {
+        width: 10%;
+    }
+    50% {
+        width: 70%;
+    }
+    100% {
+        width: 90%;
+    }
+}
+
+.loading-bar.complete {
+    width: 100%;
+    opacity: 1;
+    transition: opacity 0.3s ease 0.3s;
+}
+
+.loading-bar.complete.fade {
+    opacity: 0;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 20px;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--info);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Loading Overlay */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(13, 17, 23, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9998;
+    backdrop-filter: blur(4px);
+    display: none;
+}
+
+.loading-overlay.active {
+    display: flex;
+}
+
+.loading-content {
+    text-align: center;
+}
+
+.loading-content .spinner {
+    width: 48px;
+    height: 48px;
+    border-width: 3px;
+    margin: 0 auto 16px;
+}
+
+.loading-content p {
+    color: var(--text-primary);
+    font-size: 16px;
+    margin: 0;
+}
+
+/* Skeleton Loading */
+.skeleton {
+    background: linear-gradient(90deg, var(--tertiary-bg) 25%, var(--hover-bg) 50%, var(--tertiary-bg) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s infinite;
+    border-radius: 4px;
+}
+
+@keyframes skeleton-loading {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+.skeleton-text {
+    height: 16px;
+    margin-bottom: 8px;
+}
+
+.skeleton-heading {
+    height: 24px;
+    margin-bottom: 12px;
+}
+
+.skeleton-card {
+    background: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.skeleton-card .skeleton-heading {
+    width: 60%;
+}
+
+.skeleton-card .skeleton-text {
+    width: 80%;
+    margin-bottom: 12px;
+}
+
+.skeleton-card .skeleton-text:nth-child(3) {
+    width: 50%;
+}
+
+/* Toast Notification */
+.toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: var(--shadow-lg);
+    z-index: 10000;
+    max-width: 400px;
+    animation: slideIn 0.3s ease-out;
+}
+
+.toast.success {
+    border-left: 3px solid var(--success);
+}
+
+.toast.error {
+    border-left: 3px solid var(--danger);
+}
+
+.toast.warning {
+    border-left: 3px solid var(--warning);
+}
+
+.toast.info {
+    border-left: 3px solid var(--info);
+}
+
+.toast-icon {
+    flex-shrink: 0;
+    font-size: 20px;
+}
+
+.toast.success .toast-icon {
+    color: var(--success);
+}
+
+.toast.error .toast-icon {
+    color: var(--danger);
+}
+
+.toast.warning .toast-icon {
+    color: var(--warning);
+}
+
+.toast.info .toast-icon {
+    color: var(--info);
+}
+
+.toast-message {
+    flex: 1;
+    font-size: 14px;
+}
+
+.toast-close {
+    flex-shrink: 0;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 18px;
+    line-height: 1;
+}
+
+.toast-close:hover {
+    color: var(--text-primary);
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+}
+
+.toast.remove {
+    animation: slideOut 0.3s ease-out forwards;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .toast {
+        bottom: 16px;
+        right: 16px;
+        left: 16px;
+        max-width: none;
+    }
+}
