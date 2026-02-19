@@ -135,6 +135,65 @@
             color: var(--text-secondary);
         }
         
+        .input-group {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        
+        .form-row.full {
+            grid-template-columns: 1fr;
+        }
+        
+        .form-group {
+            display: grid;
+            gap: 6px;
+        }
+        
+        .form-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .form-group input,
+        .form-group select {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+        }
+        
+        .form-group input::placeholder {
+            color: var(--text-secondary);
+        }
+        
+        .symbol-input {
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
         .btn {
             background: linear-gradient(135deg, var(--blue), var(--purple));
             color: white;
@@ -145,7 +204,14 @@
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
-            margin-top: 15px;
+            margin-top: 0;
+            white-space: nowrap;
+        }
+        
+        .form-row .btn {
+            margin-top: 0;
+            height: fit-content;
+            align-self: flex-end;
         }
         
         .btn:hover {
@@ -736,11 +802,25 @@
                     <div class="card-icon icon-price">📈</div>
                     <h2>Price Data Analysis</h2>
                 </div>
-                <textarea id="priceInput" placeholder="Paste OHLCV data here...
-Example format:
-30-01-2026	1,395.40	1,382.60	1,398.00	1,378.50	11.24M	+0.32%
-29-01-2026	1,391.00	1,402.90	1,402.90	1,384.00	20.85M	-0.41%"></textarea>
-                <button class="btn" onclick="analyzePrice()">Analyze Price Data</button>
+                <div class="input-group">
+                    <div class="form-row">
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label for="stockSymbol">Stock Symbol</label>
+                            <input type="text" id="stockSymbol" class="symbol-input" placeholder="e.g., TCS, RELIANCE, INFY" maxlength="10">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="startDate">Start Date (Optional)</label>
+                            <input type="date" id="startDate">
+                        </div>
+                        <div class="form-group">
+                            <label for="endDate">End Date (Optional)</label>
+                            <input type="date" id="endDate">
+                        </div>
+                        <button class="btn" onclick="analyzePrice()">Analyze Price Data</button>
+                    </div>
+                </div>
                 
                 <div id="priceResults" class="results hidden">
                     <div class="metric-grid" id="priceMetrics"></div>
@@ -780,11 +860,24 @@ Example format:
                     <div class="card-icon icon-news">📰</div>
                     <h2>News Sentiment Analysis</h2>
                 </div>
-                <textarea id="newsInput" placeholder="Paste news headlines and snippets here...
+                <div class="input-group">
+                    <div class="form-row">
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label for="newsSymbol">Stock Symbol</label>
+                            <input type="text" id="newsSymbol" class="symbol-input" placeholder="e.g., TCS, RELIANCE, INFY" maxlength="10">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <button class="btn" style="grid-column: 1 / -1; width: 100%;" onclick="analyzeNews()">Analyze Sentiment</button>
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); text-align: center; margin: 10px 0 -10px;">
+                        Or paste news headlines manually in the textarea below
+                    </p>
+                </div>
+                <textarea id="newsInput" placeholder="Optional: Paste news headlines here...
 Example:
 Reliance Industries Sees Rs. 113.68 Crore Block Trade on NSE
-India's Reliance to buy up to 150,000 bpd of Russian oil..."></textarea>
-                <button class="btn" onclick="analyzeNews()">Analyze Sentiment</button>
+India's Reliance to buy up to 150,000 bpd of Russian oil..." style="height: 100px; margin-top: 15px;"></textarea>
                 
                 <div id="newsResults" class="results hidden">
                     <div class="metric-grid" id="newsMetrics"></div>
@@ -811,12 +904,26 @@ India's Reliance to buy up to 150,000 bpd of Russian oil..."></textarea>
                     <div class="card-icon icon-finance">💰</div>
                     <h2>Financial Data</h2>
                 </div>
-                <textarea id="financialsInput" placeholder="Paste financial statement data here...
+                <div class="input-group">
+                    <div class="form-row">
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label for="financialSymbol">Stock Symbol</label>
+                            <input type="text" id="financialSymbol" class="symbol-input" placeholder="e.g., TCS, RELIANCE, INFY" maxlength="10">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <button class="btn" style="grid-column: 1 / -1; width: 100%;" onclick="fetchFinancials()">Fetch Financial Data</button>
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); text-align: center; margin: 10px 0 -10px;">
+                        Or paste financial data manually below
+                    </p>
+                </div>
+                <textarea id="financialsInput" placeholder="Optional: Paste financial statement data here...
 Example:
 Revenue: 250,000 Cr
 Net Profit: 45,000 Cr
-EBITDA: 65,000 Cr"></textarea>
-                <button class="btn" onclick="parseFinancials()">Parse Financials</button>
+EBITDA: 65,000 Cr" style="height: 100px; margin-top: 15px;"></textarea>
+                <button class="btn" onclick="parseFinancials()" style="margin-top: 10px;">Parse Manual Data</button>
                 
                 <div id="financialsResults" class="results hidden">
                     <div class="financials-table">
@@ -858,6 +965,7 @@ EBITDA: 65,000 Cr"></textarea>
     </div>
     
     <script>
+        const API_BASE_URL = 'http://127.0.0.1:5000/api';
         let priceData = [];
         let newsData = { sentiment: 'neutral', score: 50, headlines: [] };
         let priceTrend = 'sideways';
@@ -883,41 +991,52 @@ EBITDA: 65,000 Cr"></textarea>
             return num.toString();
         }
         
-        function analyzePrice() {
-            const input = document.getElementById('priceInput').value.trim();
-            if (!input) {
-                alert('Please paste price data first!');
+        async function analyzePrice() {
+            const symbol = document.getElementById('stockSymbol').value.trim().toUpperCase();
+            const startDateInput = document.getElementById('startDate').value;
+            const endDateInput = document.getElementById('endDate').value;
+            
+            if (!symbol) {
+                alert('Please enter a stock symbol (e.g., TCS, RELIANCE)!');
                 return;
             }
             
-            const lines = input.split('\n').filter(l => l.trim());
-            priceData = [];
+            // Set default dates if not provided
+            let endDate = new Date();
+            let startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000); // Last 7 days by default
             
-            lines.forEach(line => {
-                const parts = line.split(/\t|(?<=\d)\s+(?=\d)|(?<=\d)\s+(?=[+-])/).map(p => p.trim()).filter(p => p);
-                if (parts.length >= 6) {
-                    priceData.push({
-                        date: parts[0],
-                        close: parseNumber(parts[1]),
-                        open: parseNumber(parts[2]),
-                        high: parseNumber(parts[3]),
-                        low: parseNumber(parts[4]),
-                        volume: parseVolume(parts[5]),
-                        change: parseNumber(parts[6] || '0')
-                    });
+            if (endDateInput) endDate = new Date(endDateInput);
+            if (startDateInput) startDate = new Date(startDateInput);
+            
+            const formatDate = (d) => d.toISOString().split('T')[0];
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/company/history?symbol=${symbol}&start=${formatDate(startDate)}&end=${formatDate(endDate)}`);
+                const data = await response.json();
+                
+                if (!Array.isArray(data) || data.length === 0) {
+                    alert('No data found for symbol: ' + symbol + '. Please check the symbol and try again.');
+                    return;
                 }
-            });
-            
-            if (priceData.length === 0) {
-                alert('Could not parse price data. Please check the format.');
+                
+                priceData = data.map(d => ({
+                    date: d.Date,
+                    open: parseFloat(d.Open),
+                    close: parseFloat(d.Close),
+                    high: parseFloat(d.High),
+                    low: parseFloat(d.Low),
+                    volume: parseInt(d.Volume)
+                }));
+            } catch (error) {
+                alert('Error fetching data from API: ' + error.message);
                 return;
             }
             
-            priceData.reverse();
+            priceData.sort((a, b) => new Date(a.date) - new Date(b.date));
             
             const closes = priceData.map(d => d.close);
             const volumes = priceData.map(d => d.volume);
-            const changes = priceData.map(d => d.change);
+            const changes = priceData.map((d, i) => i === 0 ? 0 : ((d.close - priceData[i-1].close) / priceData[i-1].close) * 100);
             
             const avgReturn = changes.reduce((a, b) => a + b, 0) / changes.length;
             const avgVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
@@ -928,8 +1047,8 @@ EBITDA: 65,000 Cr"></textarea>
             const lastClose = closes[closes.length - 1];
             const priceChange = ((lastClose - firstClose) / firstClose) * 100;
             
-            if (priceChange > 1) priceTrend = 'up';
-            else if (priceChange < -1) priceTrend = 'down';
+            if (priceChange > 1) priceTrend = 'uptrend';
+            else if (priceChange < -1) priceTrend = 'downtrend';
             else priceTrend = 'sideways';
             
             const volatility = Math.max(...closes) - Math.min(...closes);
@@ -980,7 +1099,9 @@ EBITDA: 65,000 Cr"></textarea>
             
             let tableBody = '';
             [...priceData].reverse().forEach(d => {
-                const changeClass = d.change >= 0 ? 'positive' : 'negative';
+                // Calculate change as (close - open) / open
+                const change = d.open ? ((d.close - d.open) / d.open) * 100 : 0;
+                const changeClass = change >= 0 ? 'positive' : 'negative';
                 tableBody += `
                     <tr>
                         <td>${d.date}</td>
@@ -989,7 +1110,7 @@ EBITDA: 65,000 Cr"></textarea>
                         <td>₹${d.high.toLocaleString()}</td>
                         <td>₹${d.low.toLocaleString()}</td>
                         <td>${formatVolume(d.volume)}</td>
-                        <td class="${changeClass}">${d.change >= 0 ? '+' : ''}${d.change.toFixed(2)}%</td>
+                        <td class="${changeClass}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</td>
                     </tr>
                 `;
             });
@@ -1093,83 +1214,77 @@ EBITDA: 65,000 Cr"></textarea>
             container.innerHTML = html;
         }
         
-        function analyzeNews() {
-            const input = document.getElementById('newsInput').value.trim();
-            if (!input) {
-                alert('Please paste news content first!');
+        async function analyzeNews() {
+            const symbol = document.getElementById('newsSymbol').value.trim().toUpperCase();
+            const manualNews = document.getElementById('newsInput').value.trim();
+            
+            let headlines = [];
+            
+            // If symbol is provided, fetch news from API
+            if (symbol) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/news/analyze-full?symbol=${symbol}`);
+                    const result = await response.json();
+                    
+                    if (result.error) {
+                        // If API fails, try manual analysis mode
+                        if (manualNews) {
+                            analyzeManualNews(manualNews);
+                            return;
+                        }
+                        alert('Error: ' + result.error);
+                        return;
+                    }
+                    
+                    // Extract headlines from news
+                    if (result.news && Array.isArray(result.news)) {
+                        headlines = result.news.map(item => item.title || item.content?.title || '').filter(h => h);
+                    }
+                    
+                    // Use FinBERT analysis if available
+                    if (result.analysis && result.analysis.details) {
+                        const analyzed = result.analysis.details;
+                        const positiveCount = analyzed.filter(h => h.sentiment === 'Positive').length;
+                        const negativeCount = analyzed.filter(h => h.sentiment === 'Negative').length;
+                        const neutralCount = analyzed.filter(h => h.sentiment === 'Neutral').length;
+                        
+                        let overallSentiment = 'neutral';
+                        if (positiveCount > negativeCount && positiveCount > neutralCount) overallSentiment = 'positive';
+                        else if (negativeCount > positiveCount && negativeCount > neutralCount) overallSentiment = 'negative';
+                        
+                        newsData = {
+                            sentiment: overallSentiment,
+                            score: positiveCount > negativeCount ? 60 + (positiveCount * 5) : 40 - (negativeCount * 5),
+                            headlines: analyzed.map(h => ({
+                                text: h.headline.substring(0, 150),
+                                sentiment: h.sentiment.toLowerCase(),
+                                confidence: h.confidence || 0.8
+                            })),
+                            positiveCount,
+                            negativeCount,
+                            neutralCount
+                        };
+                    }
+                } catch (error) {
+                    alert('Error fetching news: ' + error.message);
+                    return;
+                }
+            } else if (manualNews) {
+                // Analyze manually pasted news
+                analyzeManualNews(manualNews);
+                return;
+            } else {
+                alert('Please enter a stock symbol or paste news headlines!');
                 return;
             }
             
-            const positiveKeywords = ['buy', 'buying', 'growth', 'record', 'profit', 'profits', 'investment', 'upgrade', 'expansion', 'surge', 'gain', 'gains', 'positive', 'bullish', 'rise', 'rising', 'up', 'boost', 'strong', 'strength', 'beat', 'beats', 'outperform', 'rally', 'recover', 'recovery', 'opportunity', 'breakthrough', 'success', 'successful', 'deal', 'partnership', 'acquisition', 'launch', 'innovative', 'dividend', 'bonus'];
+            const confidence = Math.min(100, Math.round(Math.abs(newsData.score - 50) * 2 + 30));
+            const overallSentiment = newsData.sentiment;
             
-            const negativeKeywords = ['fall', 'falls', 'falling', 'loss', 'losses', 'slump', 'wiped', 'downgrade', 'risk', 'risks', 'decline', 'declining', 'drop', 'drops', 'crash', 'negative', 'bearish', 'weak', 'weakness', 'miss', 'misses', 'underperform', 'sell', 'selling', 'selloff', 'concern', 'concerns', 'warning', 'danger', 'trouble', 'problem', 'crisis', 'debt', 'lawsuit', 'fraud', 'investigation', 'penalty', 'fine', 'cut', 'cuts', 'layoff', 'layoffs', 'downside'];
-            
-            const lines = input.split('\n').filter(l => l.trim().length > 10);
-            const headlines = [];
-            
-            let totalPositive = 0;
-            let totalNegative = 0;
-            
-            lines.forEach(line => {
-                const lowerLine = line.toLowerCase();
-                let posCount = 0;
-                let negCount = 0;
-                const foundPositive = [];
-                const foundNegative = [];
-                
-                positiveKeywords.forEach(kw => {
-                    const regex = new RegExp('\\b' + kw + '\\b', 'gi');
-                    const matches = lowerLine.match(regex);
-                    if (matches) {
-                        posCount += matches.length;
-                        foundPositive.push(kw);
-                    }
-                });
-                
-                negativeKeywords.forEach(kw => {
-                    const regex = new RegExp('\\b' + kw + '\\b', 'gi');
-                    const matches = lowerLine.match(regex);
-                    if (matches) {
-                        negCount += matches.length;
-                        foundNegative.push(kw);
-                    }
-                });
-                
-                let sentiment = 'neutral';
-                if (posCount > negCount) sentiment = 'positive';
-                else if (negCount > posCount) sentiment = 'negative';
-                
-                totalPositive += posCount;
-                totalNegative += negCount;
-                
-                headlines.push({
-                    text: line.substring(0, 150) + (line.length > 150 ? '...' : ''),
-                    sentiment,
-                    posCount,
-                    negCount,
-                    keywords: [...foundPositive.map(k => '+' + k), ...foundNegative.map(k => '-' + k)]
-                });
-            });
-            
-            const total = totalPositive + totalNegative || 1;
-            const positiveRatio = totalPositive / total;
-            const sentimentScore = Math.round(50 + (positiveRatio - 0.5) * 100);
-            
-            let overallSentiment = 'neutral';
-            if (sentimentScore > 60) overallSentiment = 'positive';
-            else if (sentimentScore < 40) overallSentiment = 'negative';
-            
-            newsData = {
-                sentiment: overallSentiment,
-                score: sentimentScore,
-                headlines,
-                positiveCount: headlines.filter(h => h.sentiment === 'positive').length,
-                negativeCount: headlines.filter(h => h.sentiment === 'negative').length,
-                neutralCount: headlines.filter(h => h.sentiment === 'neutral').length
-            };
-            
-            const confidence = Math.min(100, Math.round(Math.abs(sentimentScore - 50) * 2 + 30));
-            
+            displayNewsResults(confidence, overallSentiment, newsData.headlines);
+        }
+        
+        function displayNewsResults(confidence, overallSentiment, headlines) {
             document.getElementById('newsMetrics').innerHTML = `
                 <div class="metric">
                     <div class="metric-value">
@@ -1199,9 +1314,9 @@ EBITDA: 65,000 Cr"></textarea>
                 </div>
             `;
             
-            const needleAngle = -90 + (sentimentScore / 100) * 180;
+            const needleAngle = -90 + (newsData.score / 100) * 180;
             document.getElementById('sentimentNeedle').style.transform = `rotate(${needleAngle}deg)`;
-            document.getElementById('sentimentValue').textContent = sentimentScore + '%';
+            document.getElementById('sentimentValue').textContent = newsData.score + '%';
             document.getElementById('sentimentValue').className = `gauge-value ${overallSentiment === 'positive' ? 'positive' : overallSentiment === 'negative' ? 'negative' : 'neutral'}`;
             
             const maxCount = Math.max(newsData.positiveCount, newsData.negativeCount, newsData.neutralCount, 1);
@@ -1230,7 +1345,7 @@ EBITDA: 65,000 Cr"></textarea>
                         <div class="sentiment-headline">${h.text}</div>
                         <div class="sentiment-score">
                             <span class="badge badge-${h.sentiment}">${h.sentiment.toUpperCase()}</span>
-                            ${h.keywords.length > 0 ? `<span style="margin-left: 10px; font-size: 0.7rem;">Keywords: ${h.keywords.slice(0, 5).join(', ')}</span>` : ''}
+                            ${h.keywords && h.keywords.length > 0 ? `<span style="margin-left: 10px; font-size: 0.7rem;">Keywords: ${h.keywords.slice(0, 5).join(', ')}</span>` : ''}
                         </div>
                     </div>
                 `;
@@ -1238,6 +1353,58 @@ EBITDA: 65,000 Cr"></textarea>
             document.getElementById('sentimentList').innerHTML = listHtml;
             
             document.getElementById('newsResults').classList.remove('hidden');
+        }
+        
+        async function fetchFinancials() {
+            const symbol = document.getElementById('financialSymbol').value.trim().toUpperCase();
+            
+            if (!symbol) {
+                alert('Please enter a stock symbol (e.g., TCS, RELIANCE)!');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/company/financials?symbol=${symbol}`);
+                const data = await response.json();
+                
+                if (!data || Object.keys(data).length === 0) {
+                    alert('No financial data found for symbol: ' + symbol);
+                    return;
+                }
+                
+                let tableHtml = '';
+                
+                // Display all financial metrics
+                for (const [key, value] of Object.entries(data)) {
+                    if (value !== null && value !== undefined) {
+                        const displayValue = typeof value === 'number' ? 
+                            (value > 1000000000 ? 
+                                (value / 1000000000).toFixed(2) + ' B' : 
+                            value > 10000 ? 
+                                (value / 10000000).toFixed(2) + ' Cr' : 
+                            value.toLocaleString('en-IN')) : 
+                            value;
+                        
+                        tableHtml += `
+                            <tr>
+                                <td><strong>${key}</strong></td>
+                                <td>${displayValue}</td>
+                            </tr>
+                        `;
+                    }
+                }
+                
+                if (!tableHtml) {
+                    alert('No valid financial data to display');
+                    return;
+                }
+                
+                document.getElementById('financialsTableBody').innerHTML = tableHtml;
+                document.getElementById('financialsResults').classList.remove('hidden');
+                
+            } catch (error) {
+                alert('Error fetching financial data: ' + error.message);
+            }
         }
         
         function parseFinancials() {
@@ -1297,32 +1464,32 @@ EBITDA: 65,000 Cr"></textarea>
             let bearishProb = 33;
             let sidewaysProb = 34;
             
-            if (trend === 'up' && sentiment === 'positive') {
+            if (trend === 'uptrend' && sentiment === 'positive') {
                 outlook = 'bullish';
                 bullishProb = 70;
                 bearishProb = 10;
                 sidewaysProb = 20;
-            } else if (trend === 'up' && sentiment === 'neutral') {
+            } else if (trend === 'uptrend' && sentiment === 'neutral') {
                 outlook = 'moderately-bullish';
                 bullishProb = 55;
                 bearishProb = 15;
                 sidewaysProb = 30;
-            } else if (trend === 'up' && sentiment === 'negative') {
+            } else if (trend === 'uptrend' && sentiment === 'negative') {
                 outlook = 'cautious';
                 bullishProb = 35;
                 bearishProb = 35;
                 sidewaysProb = 30;
-            } else if (trend === 'down' && sentiment === 'negative') {
+            } else if (trend === 'downtrend' && sentiment === 'negative') {
                 outlook = 'bearish';
                 bullishProb = 10;
                 bearishProb = 70;
                 sidewaysProb = 20;
-            } else if (trend === 'down' && sentiment === 'neutral') {
+            } else if (trend === 'downtrend' && sentiment === 'neutral') {
                 outlook = 'moderately-bearish';
                 bullishProb = 15;
                 bearishProb = 55;
                 sidewaysProb = 30;
-            } else if (trend === 'down' && sentiment === 'positive') {
+            } else if (trend === 'downtrend' && sentiment === 'positive') {
                 outlook = 'mixed';
                 bullishProb = 35;
                 bearishProb = 35;
@@ -1448,6 +1615,12 @@ EBITDA: 65,000 Cr"></textarea>
                 strategies.push({ icon: '🔔', text: 'Set alerts for breakout levels to capture next move' });
             }
             
+            if (trend === 'uptrend') {
+                strategies[strategies.length - 1] = { icon: '🟢', text: 'Uptrend favors long positions over shorts' };
+            } else if (trend === 'downtrend') {
+                strategies[strategies.length - 1] = { icon: '🔴', text: 'Downtrend favors short positions over longs' };
+            }
+            
             return strategies;
         }
         
@@ -1471,14 +1644,159 @@ EBITDA: 65,000 Cr"></textarea>
             return strategies;
         }
         
+        function analyzeManualNews(input) {
+            const positiveKeywords = ['buy', 'buying', 'growth', 'record', 'profit', 'profits', 'investment', 'upgrade', 'expansion', 'surge', 'gain', 'gains', 'positive', 'bullish', 'rise', 'rising', 'up', 'boost', 'strong', 'strength', 'beat', 'beats', 'outperform', 'rally', 'recover', 'recovery', 'opportunity', 'breakthrough', 'success', 'successful', 'deal', 'partnership', 'acquisition', 'launch', 'innovative', 'dividend', 'bonus'];
+            
+            const negativeKeywords = ['fall', 'falls', 'falling', 'loss', 'losses', 'slump', 'wiped', 'downgrade', 'risk', 'risks', 'decline', 'declining', 'drop', 'drops', 'crash', 'negative', 'bearish', 'weak', 'weakness', 'miss', 'misses', 'underperform', 'sell', 'selling', 'selloff', 'concern', 'concerns', 'warning', 'danger', 'trouble', 'problem', 'crisis', 'debt', 'lawsuit', 'fraud', 'investigation', 'penalty', 'fine', 'cut', 'cuts', 'layoff', 'layoffs', 'downside'];
+            
+            const lines = input.split('\n').filter(l => l.trim().length > 10);
+            const headlines = [];
+            
+            let totalPositive = 0;
+            let totalNegative = 0;
+            
+            lines.forEach(line => {
+                const lowerLine = line.toLowerCase();
+                let posCount = 0;
+                let negCount = 0;
+                const foundPositive = [];
+                const foundNegative = [];
+                
+                positiveKeywords.forEach(kw => {
+                    const regex = new RegExp('\\b' + kw + '\\b', 'gi');
+                    const matches = lowerLine.match(regex);
+                    if (matches) {
+                        posCount += matches.length;
+                        foundPositive.push(kw);
+                    }
+                });
+                
+                negativeKeywords.forEach(kw => {
+                    const regex = new RegExp('\\b' + kw + '\\b', 'gi');
+                    const matches = lowerLine.match(regex);
+                    if (matches) {
+                        negCount += matches.length;
+                        foundNegative.push(kw);
+                    }
+                });
+                
+                let sentiment = 'neutral';
+                if (posCount > negCount) sentiment = 'positive';
+                else if (negCount > posCount) sentiment = 'negative';
+                
+                totalPositive += posCount;
+                totalNegative += negCount;
+                
+                headlines.push({
+                    text: line.substring(0, 150) + (line.length > 150 ? '...' : ''),
+                    sentiment,
+                    posCount,
+                    negCount,
+                    keywords: [...foundPositive.map(k => '+' + k), ...foundNegative.map(k => '-' + k)]
+                });
+            });
+            
+            const total = totalPositive + totalNegative || 1;
+            const positiveRatio = totalPositive / total;
+            const sentimentScore = Math.round(50 + (positiveRatio - 0.5) * 100);
+            
+            let overallSentiment = 'neutral';
+            if (sentimentScore > 60) overallSentiment = 'positive';
+            else if (sentimentScore < 40) overallSentiment = 'negative';
+            
+            newsData = {
+                sentiment: overallSentiment,
+                score: sentimentScore,
+                headlines,
+                positiveCount: headlines.filter(h => h.sentiment === 'positive').length,
+                negativeCount: headlines.filter(h => h.sentiment === 'negative').length,
+                neutralCount: headlines.filter(h => h.sentiment === 'neutral').length
+            };
+            
+            const confidence = Math.min(100, Math.round(Math.abs(sentimentScore - 50) * 2 + 30));
+            
+            displayNewsResults(confidence, overallSentiment, headlines);
+        }
+        
+        function displayNewsResults(confidence, overallSentiment, headlines) {
+            document.getElementById('newsMetrics').innerHTML = `
+                <div class="metric">
+                    <div class="metric-value">
+                        <span class="badge badge-${overallSentiment}">${overallSentiment.toUpperCase()}</span>
+                    </div>
+                    <div class="metric-label">Overall Sentiment</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${headlines.length}</div>
+                    <div class="metric-label">Headlines Analyzed</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value positive">${newsData.positiveCount}</div>
+                    <div class="metric-label">Positive</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value negative">${newsData.negativeCount}</div>
+                    <div class="metric-label">Negative</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value neutral">${newsData.neutralCount}</div>
+                    <div class="metric-label">Neutral</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${confidence}%</div>
+                    <div class="metric-label">Confidence</div>
+                </div>
+            `;
+            
+            const needleAngle = -90 + (newsData.score / 100) * 180;
+            document.getElementById('sentimentNeedle').style.transform = `rotate(${needleAngle}deg)`;
+            document.getElementById('sentimentValue').textContent = newsData.score + '%';
+            document.getElementById('sentimentValue').className = `gauge-value ${overallSentiment === 'positive' ? 'positive' : overallSentiment === 'negative' ? 'negative' : 'neutral'}`;
+            
+            const maxCount = Math.max(newsData.positiveCount, newsData.negativeCount, newsData.neutralCount, 1);
+            document.getElementById('sentimentChart').innerHTML = `
+                <div class="bar-wrapper">
+                    <div class="bar-value positive">${newsData.positiveCount}</div>
+                    <div class="bar" style="height: ${(newsData.positiveCount / maxCount) * 130}px; background: var(--green);"></div>
+                    <div class="bar-label">Positive</div>
+                </div>
+                <div class="bar-wrapper">
+                    <div class="bar-value neutral">${newsData.neutralCount}</div>
+                    <div class="bar" style="height: ${(newsData.neutralCount / maxCount) * 130}px; background: var(--yellow);"></div>
+                    <div class="bar-label">Neutral</div>
+                </div>
+                <div class="bar-wrapper">
+                    <div class="bar-value negative">${newsData.negativeCount}</div>
+                    <div class="bar" style="height: ${(newsData.negativeCount / maxCount) * 130}px; background: var(--red);"></div>
+                    <div class="bar-label">Negative</div>
+                </div>
+            `;
+            
+            let listHtml = '';
+            headlines.forEach(h => {
+                listHtml += `
+                    <div class="sentiment-item ${h.sentiment}">
+                        <div class="sentiment-headline">${h.text}</div>
+                        <div class="sentiment-score">
+                            <span class="badge badge-${h.sentiment}">${h.sentiment.toUpperCase()}</span>
+                            ${h.keywords && h.keywords.length > 0 ? `<span style="margin-left: 10px; font-size: 0.7rem;">Keywords: ${h.keywords.slice(0, 5).join(', ')}</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('sentimentList').innerHTML = listHtml;
+            
+            document.getElementById('newsResults').classList.remove('hidden');
+        }
+        
         function generateInsights(outlook, trend, sentiment, priceData, newsData) {
             const insights = [];
             
             insights.push({
-                icon: trend === 'up' ? '📈' : trend === 'down' ? '📉' : '↔️',
+                icon: trend === 'uptrend' ? '📈' : trend === 'downtrend' ? '📉' : '↔️',
                 title: `Price Trend: ${trend.toUpperCase()}`,
-                text: trend === 'up' ? 'The stock is showing upward momentum. Higher highs and higher lows suggest buyers are in control.' :
-                      trend === 'down' ? 'The stock is under selling pressure. Lower highs and lower lows indicate bears dominating.' :
+                text: trend === 'uptrend' ? 'The stock is showing upward momentum. Higher highs and higher lows suggest buyers are in control.' :
+                      trend === 'downtrend' ? 'The stock is under selling pressure. Lower highs and lower lows indicate bears dominating.' :
                       'Price is consolidating in a range. A breakout in either direction could trigger the next trend.'
             });
             

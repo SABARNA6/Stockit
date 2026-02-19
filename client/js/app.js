@@ -226,10 +226,10 @@ function renderNews(newsAnalysis) {
     newsList.innerHTML = newsAnalysis.news.map((item, index) => {
         const analysis = newsAnalysis.analysis?.details?.[index] || {};
         const sentiment = analysis.sentiment || 'Neutral';
-
+        console.log(item);
         return `
             <div class="news-item">
-                <a href="${item.link || '#'}" target="_blank" class="news-title">${item.title}</a>
+                <a href="${item.link || '#'}" target="_blank" class="news-title">${item.content.title}</a>
                 <div class="news-meta">
                     <span>${new Date(item.publisher?.publishTime || Date.now()).toLocaleDateString()}</span>
                     <span>${item.publisher || 'Finance News'}</span>
