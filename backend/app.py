@@ -110,7 +110,7 @@ def search_company():
     if GOOGLE_SHEETS_URL:
         try:
             url = f"{GOOGLE_SHEETS_URL}?symbol={symbol}"
-            response = requests.get(url, timeout=5)
+            response = requests.get(url, timeout=30)
             data = response.json()
             
             if data.get('data') and len(data['data']) > 0:
