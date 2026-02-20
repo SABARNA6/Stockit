@@ -1,6 +1,9 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import functions
+import os
+
+import yfinance
 
 # For Knowivate News API
 import requests
@@ -10,6 +13,9 @@ import asyncio
 import sys
 import importlib
 import types
+
+# Google Sheets API URL
+GOOGLE_SHEETS_URL = os.environ.get('GOOGLE_SHEETS_URL', '')
 
 gradio_client = None
 if sys.version_info >= (3, 8):
@@ -30,6 +36,10 @@ def nifty50():
     """Get list of Nifty 50 companies."""
     data = functions.get_nifty50_details()
     return jsonify(data)
+@app.route('/api/test', methods=['GET'])
+def news():
+    symbol = request.args.get('symbol')
+    return jsonify(yfinance.ticker.Ticker(symbol).news)
 
 @app.route('/api/company/info', methods=['GET'])
 def company_info():
@@ -85,6 +95,32 @@ def financials():
     data = functions.get_finacial_metric(symbol)
     return jsonify(data)
 
+@app.route('/api/company/search', methods=['GET'])
+def search_company():
+    """
+    Search company - tries Google Sheets first, falls back to news analysis.
+    Query Params: symbol
+    Example: /api/company/search?symbol=ADANIPORTS
+    """
+    symbol = request.args.get('symbol')
+    if not symbol:
+        return jsonify({"error": "Symbol parameter is required"}), 400
+    
+    # Try Google Sheets first if URL is configured
+    if GOOGLE_SHEETS_URL:
+        try:
+            url = f"{GOOGLE_SHEETS_URL}?symbol={symbol}"
+            response = requests.get(url, timeout=5)
+            data = response.json()
+            
+            if data.get('data') and len(data['data']) > 0:
+                return jsonify(data)
+        except Exception as e:
+            print(f"Google Sheets lookup failed: {e}")
+    
+    # Fallback to news analysis
+    return analyze_full_news()
+
 # @app.route('/api/company/news', methods=['GET'])
 # def news():
 #     """
@@ -121,30 +157,20 @@ def financials():
 
 @app.route('/api/news/analyze-full', methods=['GET'])
 def analyze_full_news():
-    """
-    Get news for a symbol and analyze with FinBERT.
-    Query Params: symbol
-    Example: /api/news/analyze-full?symbol=TCS
-    """
     symbol = request.args.get('symbol')
     if not symbol:
         return jsonify({"error": "Symbol parameter is required"}), 400
-    
+
     try:
         news_data = functions.get_news_data(symbol)
-        
+
         if not news_data:
             return jsonify({"error": "No news found for this symbol"}), 200
-        # news_data = functions.get_company_news(symbol)  # symbol OR company name
+
+        # Extract headlines
         headlines = []
         for item in news_data:
-            # Direct title
-            title = item.get('title')
-            
-            # Or nested under 'content'
-            if not title and 'content' in item:
-                title = item['content'].get('title')
-            
+            title = item.get('content', {}).get('title')
             if title:
                 headlines.append(title)
 
@@ -152,16 +178,29 @@ def analyze_full_news():
             return jsonify({"error": "No headlines found"}), 404
 
         analyzed = functions.analyze_headlines_with_finbert(headlines)
-        
+
+        # ✅ Build required output format
+        formatted_data = []
+
+        for news_item, analysis_item in zip(news_data, analyzed["details"]):
+            content = news_item.get("content", {})
+
+            formatted_data.append({
+                "confidence": analysis_item.get("confidence"),
+                "pubdate": content.get("pubDate"),
+                "sentiment": analysis_item.get("sentiment"),
+                "summary": content.get("summary"),
+                "symbol": symbol,
+                "title": content.get("title")
+            })
+
         return jsonify({
-            "symbol": symbol,
-            "news": news_data,
-            "analysis": analyzed
+            "data": formatted_data
         })
-        
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
+    
 
 @app.route('/api/news/analyze', methods=['POST'])
 def analyze_news_sentiment():

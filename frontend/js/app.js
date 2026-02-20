@@ -80,20 +80,70 @@ const App = (() => {
             currentSymbol = symbol;
             Loader.start();
 
-            // Fetch company info
-            const info = await API.getCompanyInfo(symbol);
-            currentData.info = info;
+            // Try search endpoint first (Google Sheets + fallback)
+            const searchResult = await API.searchCompany(symbol);
+            currentData.searchResult = searchResult;
 
-            renderCompanyHeader(info);
+            // Handle Google Sheets response format { symbol, data: [...] }
+            if (searchResult.data && Array.isArray(searchResult.data) && searchResult.data.length > 0) {
+                console.log('Data found in Google Sheets');
+                
+                // Check if this is news data (has title, sentiment fields)
+                const firstRecord = searchResult.data[0];
+                const isNewsData = firstRecord.title && (firstRecord.sentiment || firstRecord.summary);
+                
+                if (isNewsData) {
+                    console.log('Google Sheets contains news data');
+                    currentData.info = { Symbol: symbol };
+                    // Convert Google Sheets news format to news/analysis format
+                    currentData.news = searchResult.data;
+                    currentData.analysis = searchResult.data.map(item => ({
+                        sentiment: convertSentimentToScore(item.sentiment),
+                        confidence: item.confidence
+                    }));
+                    renderCompanyHeader({ Symbol: symbol, 'Company Name': symbol });
+                } else {
+                    console.log('Google Sheets contains financial data');
+                    currentData.info = searchResult.data[0]; // Use first matching record
+                    renderCompanyHeader(searchResult.data[0]);
+                    renderSheetDataTab(searchResult.data);
+                }
+            } 
+            // Handle news analysis fallback { symbol, news, analysis }
+            else if (searchResult.analysis) {
+                console.log('Falling back to news analysis');
+                currentData.info = { Symbol: symbol };
+                currentData.news = searchResult.news;
+                currentData.analysis = searchResult.analysis;
+                renderCompanyHeader({ Symbol: symbol, 'Company Name': symbol });
+            } 
+            // Try traditional company info if search fails
+            else {
+                const info = await API.getCompanyInfo(symbol);
+                currentData.info = info;
+                renderCompanyHeader(info);
+            }
+
             renderOverviewTab();
-
-            // Fetch additional data
             loadAllTabs();
 
         } catch (error) {
             Loader.showError(`Failed to load data for ${symbol}`);
             console.error('Error loading company data:', error);
         }
+    };
+
+    /**
+     * Convert sentiment string to numeric score
+     * Used for Google Sheets data that has string sentiments
+     */
+    const convertSentimentToScore = (sentimentStr) => {
+        if (!sentimentStr) return 0;
+        const sentiment = String(sentimentStr).toLowerCase();
+        if (sentiment.includes('positive')) return 0.7;
+        if (sentiment.includes('negative')) return -0.7;
+        if (sentiment.includes('neutral')) return 0;
+        return 0;
     };
 
     /**
@@ -146,6 +196,39 @@ const App = (() => {
                 </div>
             </div>
         `;
+    };
+
+    /**
+     * Render Google Sheet data tab
+     */
+    const renderSheetDataTab = (sheetData) => {
+        const tabContent = document.getElementById('tab-overview');
+        if (!tabContent) return;
+
+        let html = '<div class="section">';
+        html += '<h3 class="section-title">📊 Company Data</h3>';
+        html += '<div class="card"><table class="data-grid"><thead><tr>';
+
+        // Get headers from first record
+        if (sheetData.length > 0) {
+            const headers = Object.keys(sheetData[0]);
+            headers.forEach(header => {
+                html += `<th>${header}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+
+            // Add rows
+            sheetData.slice(0, 5).forEach(row => {
+                html += '<tr>';
+                Object.values(row).forEach(value => {
+                    html += `<td>${UI.formatLargeNumber(value)}</td>`;
+                });
+                html += '</tr>';
+            });
+        }
+
+        html += '</tbody></table></div></div>';
+        tabContent.innerHTML = html;
     };
 
     /**
@@ -311,12 +394,20 @@ const App = (() => {
         if (!tabContent) return;
 
         try {
-            Loader.showOverlay('Fetching news with sentiment analysis...');
+            // Use cached data from search result if available
+            let newsData = currentData.news;
+            let analysisData = currentData.analysis;
 
-            const news = await API.getNewsAnalysis(currentSymbol);
-            Loader.hideOverlay();
+            // Otherwise fetch fresh news data
+            if (!newsData && !analysisData) {
+                Loader.showOverlay('Fetching news with sentiment analysis...');
+                const news = await API.searchCompany(currentSymbol);
+                Loader.hideOverlay();
+                newsData = news.news;
+                analysisData = news.analysis;
+            }
 
-            if (!news || Object.keys(news).length === 0) {
+            if (!newsData || (Array.isArray(newsData) && newsData.length === 0)) {
                 tabContent.innerHTML = UI.createEmptyState('📰', 'No News Available', 'There are no recent news articles available');
                 return;
             }
@@ -325,22 +416,37 @@ const App = (() => {
             html += '<h3 class="section-title">📰 News & Sentiment Analysis</h3>';
             html += '<div class="grid grid-cols-1 gap-3">';
 
-            // Render news items
-            if (typeof news === 'object') {
-                for (const [key, value] of Object.entries(news).slice(0, 10)) {
-                    const sentiment = typeof value === 'object' ? value.sentiment : value;
-                    const color = sentiment > 0.5 ? 'success' : sentiment < -0.5 ? 'danger' : 'warning';
-                    console.log(sentiment);
-                    html += `
-                        <div class="card">
-                            <div class="card-body">
-                                <h4 id="${key}">${value.headline}</h4>
-                                <p class="text-secondary text-small">Sentiment: <span class="badge badge-${color}">${(sentiment * 100).toFixed(0)}%</span></p>
-                            </div>
-                        </div>
-                    `;
+            // Render news items with analysis if available
+            newsData.forEach((newsItem, index) => {
+                const headline = newsItem.title || newsItem.headline || 'No title';
+                
+                // Get sentiment - handle both numeric and string formats
+                let sentiment = 0;
+                if (analysisData && analysisData[index]) {
+                    if (typeof analysisData[index].sentiment === 'number') {
+                        sentiment = analysisData[index].sentiment;
+                    } else if (typeof analysisData[index].sentiment === 'string') {
+                        sentiment = convertSentimentToScore(analysisData[index].sentiment);
+                    }
                 }
-            }
+                
+                const color = sentiment > 0.5 ? 'success' : sentiment < -0.5 ? 'danger' : 'warning';
+                const summaryText = newsItem.summary ? `<p class="text-secondary text-small" style="margin-top: 8px;">${newsItem.summary.substring(0, 150)}...</p>` : '';
+                const pubdate = newsItem.pubdate ? `<p class="text-secondary text-small" style="margin-top: 4px; font-size: 0.85em;">${new Date(newsItem.pubdate).toLocaleDateString()}</p>` : '';
+                
+                html += `
+                    <div class="card">
+                        <div class="card-body">
+                            <h4>${headline}</h4>
+                            ${summaryText}
+                            <p class="text-secondary text-small" style="margin-top: 8px;">
+                                Sentiment: <span class="badge badge-${color}">${(sentiment * 100).toFixed(0)}%</span>
+                            </p>
+                            ${pubdate}
+                        </div>
+                    </div>
+                `;
+            });
 
             html += '</div></div>';
             tabContent.innerHTML = html;
