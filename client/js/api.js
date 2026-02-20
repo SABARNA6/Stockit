@@ -43,7 +43,7 @@ const api = {
 
     async getNewsAnalysis(symbol) {
         try {
-            const response = await fetch(`${API_BASE_URL}/news/analyze-full?symbol=${symbol}`);
+            const response = await fetch(`${API_BASE_URL}/company/search?symbol=${symbol}`);
             return await response.json();
         } catch (error) {
             console.error(`Error fetching news analysis for ${symbol}:`, error);

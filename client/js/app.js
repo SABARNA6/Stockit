@@ -210,34 +210,46 @@ function renderAbout(info) {
 }
 
 function renderNews(newsAnalysis) {
-    if (!newsAnalysis || !newsAnalysis.news) {
+    if (!newsAnalysis || !newsAnalysis.data || newsAnalysis.data.length === 0) {
         newsList.innerHTML = '<p>No news found for this company.</p>';
         sentimentSummary.innerHTML = '';
         return;
     }
 
-    const overall = newsAnalysis.analysis?.overall_sentiment || 'Neutral';
+    const data = [...newsAnalysis.data].sort(
+        (a, b) => new Date(b.pubdate) - new Date(a.pubdate)
+    );
+
+    // ---- Calculate overall sentiment ----
+    const positive = data.filter(n => n.sentiment === 'Positive').length;
+    const negative = data.filter(n => n.sentiment === 'Negative').length;
+    const neutral  = data.filter(n => n.sentiment === 'Neutral').length;
+
+    let overall = 'Neutral';
+    if (positive > negative) overall = 'Positive';
+    if (negative > positive) overall = 'Negative';
+
     sentimentSummary.innerHTML = `
         <span class="news-sentiment sentiment-${overall.toLowerCase()}">
-            Overall: ${overall}
+            Overall Sentiment: ${overall}
         </span>
     `;
 
-    newsList.innerHTML = newsAnalysis.news.map((item, index) => {
-        const analysis = newsAnalysis.analysis?.details?.[index] || {};
-        const sentiment = analysis.sentiment || 'Neutral';
-        console.log(item);
-        return `
-            <div class="news-item">
-                <a href="${item.link || '#'}" target="_blank" class="news-title">${item.content.title}</a>
-                <div class="news-meta">
-                    <span>${new Date(item.publisher?.publishTime || Date.now()).toLocaleDateString()}</span>
-                    <span>${item.publisher || 'Finance News'}</span>
-                    <span class="news-sentiment sentiment-${sentiment.toLowerCase()}">${sentiment}</span>
-                </div>
+    // ---- Render news list ----
+    newsList.innerHTML = data.map(item => `
+        <div class="news-item">
+            <div class="news-title">${item.title}</div>
+            <div class="news-meta">
+                <span>${new Date(item.pubdate).toLocaleDateString()}</span>
+                <span class="news-sentiment sentiment-${item.sentiment.toLowerCase()}">
+                    ${item.sentiment} (${(item.confidence * 100).toFixed(1)}%)
+                </span>
             </div>
-        `;
-    }).join('');
+            <p style="margin-top:8px; font-size:14px; color:#555;">
+                ${item.summary || ''}
+            </p>
+        </div>
+    `).join('');
 }
 
 function renderStrategy(history, newsAnalysis) {
@@ -248,7 +260,14 @@ function renderStrategy(history, newsAnalysis) {
     const priceChange = ((lastPrice - firstPrice) / firstPrice) * 100;
     const trend = priceChange > 5 ? 'uptrend' : (priceChange < -5 ? 'downtrend' : 'sideways');
 
-    const sentiment = newsAnalysis?.analysis?.overall_sentiment?.toLowerCase() || 'neutral';
+    const data = newsAnalysis?.data || [];
+
+    const positive = data.filter(n => n.sentiment === 'Positive').length;
+    const negative = data.filter(n => n.sentiment === 'Negative').length;
+
+    let sentiment = 'neutral';
+    if (positive > negative) sentiment = 'positive';
+    if (negative > positive) sentiment = 'negative';
 
     let outlook = 'Neutral';
     let shortTerm = [], swing = [], longTerm = [];
@@ -288,7 +307,14 @@ function renderAnalysisSummary(history, newsAnalysis) {
     const maxVolume = Math.max(...history.map(d => d.Volume));
     const volumeSpike = maxVolume > avgVolume * 1.5;
 
-    const sentiment = newsAnalysis?.analysis?.overall_sentiment || 'Neutral';
+    const data = newsAnalysis?.data || [];
+
+    const positive = data.filter(n => n.sentiment === 'Positive').length;
+    const negative = data.filter(n => n.sentiment === 'Negative').length;
+
+    let sentiment = 'Neutral';
+    if (positive > negative) sentiment = 'Positive';
+    if (negative > positive) sentiment = 'Negative';
 
     dynamicSummary.innerHTML = `
         <p style="margin-bottom: 12px;"><strong>📊 Performance:</strong> The stock has delivered a <strong>${priceChange.toFixed(2)}%</strong> return over the selected period. 

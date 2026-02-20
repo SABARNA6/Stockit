@@ -1223,7 +1223,7 @@ EBITDA: 65,000 Cr" style="height: 100px; margin-top: 15px;"></textarea>
             // If symbol is provided, fetch news from API
             if (symbol) {
                 try {
-                    const response = await fetch(`${API_BASE_URL}/news/analyze-full?symbol=${symbol}`);
+                    const response = await fetch(`${API_BASE_URL}/company/search?symbol=${symbol}`);
                     const result = await response.json();
                     
                     if (result.error) {

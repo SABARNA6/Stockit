@@ -123,7 +123,7 @@ const API = (() => {
         // Financial Metrics
         getFinancials: (symbol) => get('/company/financials', { symbol }),
         
-        // News and Analysis
-        getNewsAnalysis: (symbol) => get('/news/analyze-full', { symbol })
+        // Search Company (Google Sheets first, fallback to news analysis)
+        searchCompany: (symbol) => get('/company/search', { symbol })
     };
 })();
