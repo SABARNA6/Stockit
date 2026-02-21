@@ -24,6 +24,8 @@ const API = (() => {
             const queryString = new URLSearchParams(params).toString();
             const url = queryString ? `${BASE_URL}${endpoint}?${queryString}` : `${BASE_URL}${endpoint}`;
             
+            console.log(`[API.get] Fetching: ${url}`);
+            
             // Set timeout
             const timeoutId = setTimeout(() => abortController.abort(), REQUEST_TIMEOUT);
             
@@ -42,13 +44,14 @@ const API = (() => {
             }
             
             const data = await response.json();
+            console.log(`[API.get] Response received:`, data);
             Loader.finish();
             return data;
             
         } catch (error) {
             Loader.finish();
             if (error.name !== 'AbortError') {
-                console.error(`API Error: ${endpoint}`, error);
+                console.error(`[API.get] Error: ${endpoint}`, error);
                 Loader.showError(`Failed to load data: ${error.message}`);
             }
             throw error;

@@ -79,21 +79,23 @@ const App = (() => {
         try {
             currentSymbol = symbol;
             Loader.start();
+            console.log(`[loadCompanyData] Starting to load data for: ${symbol}`);
 
             // Try search endpoint first (Google Sheets + fallback)
             const searchResult = await API.searchCompany(symbol);
+            console.log(`[loadCompanyData] Search result received:`, searchResult);
             currentData.searchResult = searchResult;
 
             // Handle Google Sheets response format { symbol, data: [...] }
             if (searchResult.data && Array.isArray(searchResult.data) && searchResult.data.length > 0) {
-                console.log('Data found in Google Sheets');
+                console.log('[loadCompanyData] Data found in response - count:', searchResult.data.length);
                 
                 // Check if this is news data (has title, sentiment fields)
                 const firstRecord = searchResult.data[0];
                 const isNewsData = firstRecord.title && (firstRecord.sentiment || firstRecord.summary);
                 
                 if (isNewsData) {
-                    console.log('Google Sheets contains news data');
+                    console.log('[loadCompanyData] Data format: News/Analysis');
                     currentData.info = { Symbol: symbol };
                     // Convert Google Sheets news format to news/analysis format
                     currentData.news = searchResult.data;
@@ -103,7 +105,7 @@ const App = (() => {
                     }));
                     renderCompanyHeader({ Symbol: symbol, 'Company Name': symbol });
                 } else {
-                    console.log('Google Sheets contains financial data');
+                    console.log('[loadCompanyData] Data format: Financial data');
                     currentData.info = searchResult.data[0]; // Use first matching record
                     renderCompanyHeader(searchResult.data[0]);
                     renderSheetDataTab(searchResult.data);
@@ -111,7 +113,7 @@ const App = (() => {
             } 
             // Handle news analysis fallback { symbol, news, analysis }
             else if (searchResult.analysis) {
-                console.log('Falling back to news analysis');
+                console.log('[loadCompanyData] Using analysis fallback data');
                 currentData.info = { Symbol: symbol };
                 currentData.news = searchResult.news;
                 currentData.analysis = searchResult.analysis;
@@ -119,6 +121,7 @@ const App = (() => {
             } 
             // Try traditional company info if search fails
             else {
+                console.log('[loadCompanyData] Falling back to traditional company info');
                 const info = await API.getCompanyInfo(symbol);
                 currentData.info = info;
                 renderCompanyHeader(info);
@@ -126,10 +129,13 @@ const App = (() => {
 
             renderOverviewTab();
             loadAllTabs();
+            console.log('[loadCompanyData] Data loading completed successfully');
 
         } catch (error) {
             Loader.showError(`Failed to load data for ${symbol}`);
-            console.error('Error loading company data:', error);
+            console.error('[loadCompanyData] Error loading company data:', error);
+        } finally {
+            Loader.finish();
         }
     };
 
@@ -394,24 +400,33 @@ const App = (() => {
         if (!tabContent) return;
 
         try {
+            console.log('[loadNewsTab] Starting to load news');
+            
             // Use cached data from search result if available
             let newsData = currentData.news;
             let analysisData = currentData.analysis;
+            
+            console.log('[loadNewsTab] Cached news data available:', !!newsData);
 
             // Otherwise fetch fresh news data
             if (!newsData && !analysisData) {
+                console.log('[loadNewsTab] Fetching fresh news data');
                 Loader.showOverlay('Fetching news with sentiment analysis...');
                 const news = await API.searchCompany(currentSymbol);
                 Loader.hideOverlay();
-                newsData = news.news;
+                newsData = news.news || news.data;
                 analysisData = news.analysis;
+                console.log('[loadNewsTab] Fresh news data fetched');
             }
 
             if (!newsData || (Array.isArray(newsData) && newsData.length === 0)) {
+                console.log('[loadNewsTab] No news data available');
                 tabContent.innerHTML = UI.createEmptyState('📰', 'No News Available', 'There are no recent news articles available');
                 return;
             }
 
+            console.log('[loadNewsTab] Rendering', newsData.length, 'news items');
+            
             let html = '<div class="section">';
             html += '<h3 class="section-title">📰 News & Sentiment Analysis</h3>';
             html += '<div class="grid grid-cols-1 gap-3">';
@@ -450,9 +465,10 @@ const App = (() => {
 
             html += '</div></div>';
             tabContent.innerHTML = html;
+            console.log('[loadNewsTab] News rendering completed');
 
         } catch (error) {
-            console.error('Error loading news:', error);
+            console.error('[loadNewsTab] Error loading news:', error);
             const tabContent = document.getElementById('tab-news');
             if (tabContent) {
                 tabContent.innerHTML = UI.createEmptyState('⚠️', 'Error Loading News', error.message);

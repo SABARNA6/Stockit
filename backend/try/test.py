@@ -1,4 +1,9 @@
-import yfinance
+import yfinance as yf
 import yfinance.base
-yf=yfinance.ticker.Ticker("TCS")
-print(yf.get_news())
+import nsepython as nse
+yff=yfinance.ticker.Ticker("TCS")
+# print(yf.get_news())
+ticer = yf.ticker.Ticker("TCS")
+info = ticer.info
+# print(info)
+print(nse.index_info("TCS"))
