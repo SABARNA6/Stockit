@@ -140,13 +140,22 @@ async function selectCompany(symbol) {
             api.getNewsAnalysis(symbol)
         ]);
 
+        console.log('Fetched data:', { info, financials, newsAnalysis });
+
         if (info && !info.error) {
-            newsData = newsAnalysis;
+            newsData = newsAnalysis || {};
             renderCompanyInfo(info);
             renderMetrics(info, financials);
             renderAbout(info);
-            renderNews(newsAnalysis);
-            renderFinancialsTable(financials);
+            
+            // Safe render of news even if it's null/undefined
+            if (newsAnalysis) {
+                renderNews(newsAnalysis);
+            } else {
+                renderNews({ data: [] });
+            }
+            
+            renderFinancialsTable(financials || {});
 
             await fetchAndRenderChart('1Y');
             renderStrategy(currentHistory, newsAnalysis);
@@ -156,11 +165,12 @@ async function selectCompany(symbol) {
 
             showSections();
         } else {
-            alert('Failed to fetch data for this symbol.');
+            alert('Failed to fetch data for this symbol. Please try again.');
             showEmptyState();
         }
     } catch (error) {
         console.error('Error during selection:', error);
+        alert(`Error loading data: ${error.message}`);
         showEmptyState();
     } finally {
         hideLoader();
@@ -191,6 +201,11 @@ function renderMetrics(info, financials) {
 }
 
 function renderFinancialsTable(financials) {
+    if (!financials || Object.keys(financials).length === 0) {
+        financialsTableBody.innerHTML = '<tr><td colspan="2"><p>No financial data available.</p></td></tr>';
+        return;
+    }
+    
     financialsTableBody.innerHTML = Object.entries(financials).map(([key, value]) => {
         if (value === null || value === undefined) return '';
         let displayValue = typeof value === 'number' ?
@@ -217,13 +232,26 @@ function renderNews(newsAnalysis) {
     }
 
     const data = [...newsAnalysis.data].sort(
-        (a, b) => new Date(b.pubdate) - new Date(a.pubdate)
+        (a, b) => {
+            const dateA = new Date(a.pubdate || a['pubdate '] || a['pubDate'] || 0);
+            const dateB = new Date(b.pubdate || b['pubdate '] || b['pubDate'] || 0);
+            return dateB - dateA;
+        }
     );
 
     // ---- Calculate overall sentiment ----
-    const positive = data.filter(n => n.sentiment === 'Positive').length;
-    const negative = data.filter(n => n.sentiment === 'Negative').length;
-    const neutral  = data.filter(n => n.sentiment === 'Neutral').length;
+    const positive = data.filter(n => {
+        const sent = (n.sentiment || n['sentiment '] || '').toLowerCase();
+        return sent === 'positive';
+    }).length;
+    const negative = data.filter(n => {
+        const sent = (n.sentiment || n['sentiment '] || '').toLowerCase();
+        return sent === 'negative';
+    }).length;
+    const neutral  = data.filter(n => {
+        const sent = (n.sentiment || n['sentiment '] || '').toLowerCase();
+        return sent === 'neutral' || sent === '';
+    }).length;
 
     let overall = 'Neutral';
     if (positive > negative) overall = 'Positive';
@@ -236,20 +264,32 @@ function renderNews(newsAnalysis) {
     `;
 
     // ---- Render news list ----
-    newsList.innerHTML = data.map(item => `
-        <div class="news-item">
-            <div class="news-title">${item.title}</div>
-            <div class="news-meta">
-                <span>${new Date(item.pubdate).toLocaleDateString()}</span>
-                <span class="news-sentiment sentiment-${item.sentiment.toLowerCase()}">
-                    ${item.sentiment} (${(item.confidence * 100).toFixed(1)}%)
-                </span>
+    newsList.innerHTML = data.map(item => {
+        // Handle keys with or without spaces
+        const sentiment = (item.sentiment || item['sentiment '] || 'Neutral').trim();
+        const confidence = item.confidence !== undefined && item.confidence !== null ? item.confidence : (item['confidence '] || 0);
+        const pubdate = (item.pubdate || item['pubdate '] || item['pubDate'] || '');
+        const title = (item.title || item['title '] || 'No title').trim();
+        const summary = (item.summary || item['summary '] || 'No summary available').trim();
+        
+        const dateStr = pubdate ? new Date(pubdate).toLocaleDateString() : 'N/A';
+        const confPercent = (confidence * 100).toFixed(1);
+        
+        return `
+            <div class="news-item">
+                <div class="news-title">${title}</div>
+                <div class="news-meta">
+                    <span>${dateStr}</span>
+                    <span class="news-sentiment sentiment-${sentiment.toLowerCase()}">
+                        ${sentiment} (${confPercent}%)
+                    </span>
+                </div>
+                <p style="margin-top:8px; font-size:14px; color:#555;">
+                    ${summary}
+                </p>
             </div>
-            <p style="margin-top:8px; font-size:14px; color:#555;">
-                ${item.summary || ''}
-            </p>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function renderStrategy(history, newsAnalysis) {
@@ -262,8 +302,14 @@ function renderStrategy(history, newsAnalysis) {
 
     const data = newsAnalysis?.data || [];
 
-    const positive = data.filter(n => n.sentiment === 'Positive').length;
-    const negative = data.filter(n => n.sentiment === 'Negative').length;
+    const positive = data.filter(n => {
+        const sent = (n.sentiment || n['sentiment '] || '').toLowerCase();
+        return sent === 'positive';
+    }).length;
+    const negative = data.filter(n => {
+        const sent = (n.sentiment || n['sentiment '] || '').toLowerCase();
+        return sent === 'negative';
+    }).length;
 
     let sentiment = 'neutral';
     if (positive > negative) sentiment = 'positive';
@@ -309,8 +355,14 @@ function renderAnalysisSummary(history, newsAnalysis) {
 
     const data = newsAnalysis?.data || [];
 
-    const positive = data.filter(n => n.sentiment === 'Positive').length;
-    const negative = data.filter(n => n.sentiment === 'Negative').length;
+    const positive = data.filter(n => {
+        const sent = (n.sentiment || n['sentiment '] || '').toLowerCase();
+        return sent === 'positive';
+    }).length;
+    const negative = data.filter(n => {
+        const sent = (n.sentiment || n['sentiment '] || '').toLowerCase();
+        return sent === 'negative';
+    }).length;
 
     let sentiment = 'Neutral';
     if (positive > negative) sentiment = 'Positive';

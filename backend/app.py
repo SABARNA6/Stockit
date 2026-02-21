@@ -106,20 +106,30 @@ def search_company():
     if not symbol:
         return jsonify({"error": "Symbol parameter is required"}), 400
     
+    print(f"[search_company] Searching for symbol: {symbol}")
+    
     # Try Google Sheets first if URL is configured
     if GOOGLE_SHEETS_URL:
         try:
             url = f"{GOOGLE_SHEETS_URL}?symbol={symbol}"
+            print(f"[search_company] Attempting Google Sheets lookup: {url}")
             response = requests.get(url, timeout=30)
             data = response.json()
+            print(f"[search_company] Google Sheets response: {data}")
             
             if data.get('data') and len(data['data']) > 0:
+                print(f"[search_company] Found {len(data['data'])} records in Google Sheets")
                 return jsonify(data)
+            else:
+                print("[search_company] No data found in Google Sheets, falling back to news analysis")
         except Exception as e:
-            print(f"Google Sheets lookup failed: {e}")
+            print(f"[search_company] Google Sheets lookup failed: {e}")
+    else:
+        print("[search_company] Google Sheets URL not configured")
     
-    # Fallback to news analysis
-    return analyze_full_news()
+    # Fallback to news analysis - pass the symbol parameter
+    print(f"[search_company] Falling back to news analysis for {symbol}")
+    return analyze_full_news(symbol)
 
 # @app.route('/api/company/news', methods=['GET'])
 # def news():
@@ -156,16 +166,23 @@ def search_company():
 
 
 @app.route('/api/news/analyze-full', methods=['GET'])
-def analyze_full_news():
-    symbol = request.args.get('symbol')
+def analyze_full_news(symbol=None):
+    # Get symbol from parameter if not provided (for direct calls), otherwise from request args
+    if not symbol:
+        symbol = request.args.get('symbol')
     if not symbol:
         return jsonify({"error": "Symbol parameter is required"}), 400
 
+    print(f"[analyze_full_news] Starting analysis for symbol: {symbol}")
+    
     try:
         news_data = functions.get_news_data(symbol)
+        print(f"[analyze_full_news] Retrieved {len(news_data) if news_data else 0} news items")
 
         if not news_data:
-            return jsonify({"error": "No news found for this symbol"}), 200
+            print(f"[analyze_full_news] No news found for {symbol}")
+            # Return empty data instead of error  
+            return jsonify({"data": []}), 200
 
         # Extract headlines
         headlines = []
@@ -175,31 +192,94 @@ def analyze_full_news():
                 headlines.append(title)
 
         if not headlines:
-            return jsonify({"error": "No headlines found"}), 404
+            print(f"[analyze_full_news] No headlines extracted from news data")
+            # Return empty data instead of 404
+            return jsonify({"data": []}), 200
 
+        print(f"[analyze_full_news] Extracted {len(headlines)} headlines, analyzing sentiment...")
         analyzed = functions.analyze_headlines_with_finbert(headlines)
+        print(f"[analyze_full_news] Sentiment analysis completed")
 
         # ✅ Build required output format
+        # Helper function to safely get value from dict with potential spaces in keys
+        def safe_get(d, *possible_keys):
+            if not d:
+                return None
+            # Try exact keys first
+            for key in possible_keys:
+                if key in d:
+                    return d[key]
+            # Try keys with trailing space
+            for key in possible_keys:
+                spaced_key = key.strip() + " "
+                if spaced_key in d:
+                    return d[spaced_key]
+            return None
+        
         formatted_data = []
 
-        for news_item, analysis_item in zip(news_data, analyzed["details"]):
+        for idx, (news_item, analysis_item) in enumerate(zip(news_data, analyzed["details"])):
             content = news_item.get("content", {})
+            
+            # Debug: print source data structure
+            if idx == 0:
+                print(f"[analyze_full_news] Sample content keys: {list(content.keys())}")
+                print(f"[analyze_full_news] Sample analysis_item keys: {list(analysis_item.keys())}")
+            
+            # Ensure sentiment is always a proper string value
+            # Try to get sentiment from analysis_item with or without spaces
+            sentiment = safe_get(analysis_item, "sentiment") or "Neutral"
+            
+            # Clean sentiment
+            sentiment = str(sentiment).strip()
+            if not sentiment:
+                sentiment = "Neutral"
+            # Capitalize sentiment properly
+            sentiment = sentiment.capitalize()
+            
+            # Ensure confidence is a float between 0 and 1
+            confidence = safe_get(analysis_item, "confidence") or 0
+            if confidence is None:
+                confidence = 0
+            else:
+                try:
+                    confidence = float(confidence)
+                    if confidence > 1:
+                        confidence = confidence / 100
+                except (ValueError, TypeError):
+                    confidence = 0
+            
+            # Extract title, summary, pubdate with fallback for spaced keys
+            title = safe_get(content, "title", "title ") or "No title"
+            summary = safe_get(content, "summary", "summary ") or ""
+            pubdate = safe_get(content, "pubDate", "pubdate", "pubdate ") or ""
+            
+            # Ensure title is string
+            title = str(title).strip() if title else "No title"
+            summary = str(summary).strip() if summary else ""
+            pubdate = str(pubdate).strip() if pubdate else ""
 
             formatted_data.append({
-                "confidence": analysis_item.get("confidence"),
-                "pubdate": content.get("pubDate"),
-                "sentiment": analysis_item.get("sentiment"),
-                "summary": content.get("summary"),
+                "confidence": confidence,
+                "pubdate": pubdate,
+                "sentiment": sentiment,
+                "summary": summary,
                 "symbol": symbol,
-                "title": content.get("title")
+                "title": title
             })
 
-        return jsonify({
+        result = {
             "data": formatted_data
-        })
+        }
+        print(f"[analyze_full_news] Returning {len(formatted_data)} formatted news items")
+        return jsonify(result)
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"[analyze_full_news] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return empty data with error message instead of 500
+        return jsonify({"data": [], "error": str(e)}), 200
     
 
 @app.route('/api/news/analyze', methods=['POST'])
