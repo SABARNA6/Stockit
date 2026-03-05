@@ -18,7 +18,7 @@ from routes.stock_routes import stock_bp
 
 
 def create_app() -> Flask:
-    app = Flask(__name__, static_folder='../frontend/dist', static_url_path='')
+    app = Flask(__name__, static_folder='./dist', static_url_path='')
     CORS(app)
     @app.route('/')
     def index():
