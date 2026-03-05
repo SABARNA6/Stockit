@@ -3,16 +3,16 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install dependencies
-COPY backend/requirements.txt .
+COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend and client code
 # We keep them in their respective folders so relative paths in app.py work
-COPY backend/ ./backend/
-COPY client/ ./client/
+COPY server/ ./server/
+COPY frontend/ ./frontend/
 
 # Set working directory to backend to run the app
-WORKDIR /app/backend
+WORKDIR /app/server
 
 # Use port 10000 (standard for some cloud providers)
 EXPOSE 10000
