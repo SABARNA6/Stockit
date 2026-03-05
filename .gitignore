@@ -8,7 +8,9 @@ venv/
 env/
 */.env
 backend/.env
+server/.env
 .env
+frontend/node_modules/
 
 # IDE
 .vscode/
