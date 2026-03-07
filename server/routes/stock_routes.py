@@ -8,7 +8,6 @@ from helpers.stock_helper import (
     get_historical_data,
     get_financials,
     get_news,
-    get_news_for_cache,
     get_stock_trends,
     get_recommendation,
     get_chart_data,
@@ -98,26 +97,6 @@ def stock_news(symbol):
     return ok(get_news(symbol.upper(), get_realtime_stock))
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# /api/news/analyze-full?symbol=TCS  → used by AppScript cache writer
-# Returns { data: [ { title, confidence, sentiment, pubdate, summary,
-#                     symbol, url, source, publishedAt, tags } ] }
-# ─────────────────────────────────────────────────────────────────────────────
-@stock_bp.get("/news/analyze-full")
-def analyze_full_news():
-    symbol = request.args.get("symbol", "").strip().upper()
-    if not symbol:
-        return jsonify({"data": [], "error": "symbol parameter is required"}), 400
-
-    try:
-        formatted = get_news_for_cache(symbol)
-        return jsonify({"data": formatted})
-
-    except Exception as e:
-        print(f"[analyze_full_news] {symbol}: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"data": [], "error": str(e)}), 200
 
 
 # ─────────────────────────────────────────────────────────────────────────────

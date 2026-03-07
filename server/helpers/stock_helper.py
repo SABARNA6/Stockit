@@ -18,9 +18,7 @@ _finbert_client = None
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
-NEWS_API_KEY      = os.getenv("NEWS_API_KEY")
-GOOGLE_SHEETS_URL = os.getenv("GOOGLE_SHEETS_URL")
-CACHE_TTL_HOURS   = 24
+NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPERS
@@ -52,8 +50,12 @@ def _safe_int(val, default=None):
 
 def get_realtime_stock(symbol: str) -> dict:
     try:
-        ticker = yf.Ticker(_ticker_sym(symbol))
+        ticker_sym = _ticker_sym(symbol)
+        print(f"[get_realtime_stock] Fetching {ticker_sym}")
+        ticker = yf.Ticker(ticker_sym)
         info   = ticker.info
+        
+        print(f"[get_realtime_stock] Info keys: {list(info.keys())[:10]}...")
 
         current    = _safe_float(info.get("currentPrice"))
         prev       = _safe_float(info.get("previousClose")) or current
@@ -102,6 +104,8 @@ def get_realtime_stock(symbol: str) -> dict:
 
     except Exception as e:
         print(f"[get_realtime_stock] {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
         return {}
 
 
@@ -277,101 +281,18 @@ def _analyze_sentiment(text: str) -> dict:
         print(f"[FinBERT] {e}")
         return {"sentiment": "Neutral", "confidence": 0.0}
 
-# ─────────────────────────────────────────────────────────────────────────────
-# GOOGLE SHEETS CACHE
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _fetch_cached_news(symbol: str) -> list[dict] | None:
-    """
-    Sheet2 columns (1-indexed):
-      1: title  2: confidence  3: sentiment  4: pubdate
-      5: summary  6: symbol  7: url  8: source
-    """
-    if not GOOGLE_SHEETS_URL:
-        return None
-
-    try:
-        res  = requests.get(GOOGLE_SHEETS_URL, params={"symbol": symbol}, timeout=18)
-        body = res.json()
-        rows = body.get("data", [])
-
-        if not rows:
-            return None
-
-        # ── Freshness check ──────────────────────────────────────────────────
-        first_row     = rows[0]
-        cached_at_str = first_row.get("pubdate") or first_row.get("publishedAt")
-
-        if cached_at_str:
-            cached_at = datetime.fromisoformat(cached_at_str.replace("Z", "+00:00"))
-            age       = datetime.now(timezone.utc) - cached_at
-            if age > timedelta(hours=CACHE_TTL_HOURS):
-                print(f"[Cache] Stale for {symbol} ({age}), refreshing.")
-                return None
-
-        # ── Normalize to NewsCard contract ───────────────────────────────────
-        normalized = []
-        for row in rows:
-            sentiment = str(row.get("sentiment", "Neutral")).strip().capitalize()
-            pubdate   = row.get("pubdate") or row.get("publishedAt") or ""
-
-            normalized.append({
-                "title":       row.get("title", ""),
-                "summary":     row.get("summary", ""),
-                "source":      row.get("source", ""),        # sheet col 8
-                "publishedAt": pubdate,                       # renamed from pubdate
-                "url":         row.get("url", ""),           # sheet col 7
-                "tags":        [sentiment.lower()],
-                "sentiment":   sentiment,
-                "confidence":  float(row.get("confidence", 0)),
-                "symbol":      row.get("symbol", symbol.upper()),
-            })
-
-        print(f"[Cache] HIT for {symbol} ({len(normalized)} articles)")
-        return normalized
-
-    except Exception as e:
-        print(f"[Cache] Sheets fetch failed: {e}")
-        return None
 
 
-def _compute_sentiment_summary(articles: list[dict]) -> dict:
-    pos   = sum(1 for a in articles if a.get("sentiment") == "Positive")
-    neg   = sum(1 for a in articles if a.get("sentiment") == "Negative")
-    neu   = sum(1 for a in articles if a.get("sentiment") == "Neutral")
-    total = pos + neu + neg or 1
-    return {
-        "positive": round(pos / total * 100, 2),
-        "neutral":  round(neu / total * 100, 2),
-        "negative": round(neg / total * 100, 2),
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# NEWS  (cache-first → NewsAPI + FinBERT)
-# ─────────────────────────────────────────────────────────────────────────────
 
 def get_news(symbol: str, get_realtime_stock_fn) -> dict:
     """
-    1. Check Google Sheets cache for fresh articles.
-    2. On miss/stale → fetch from NewsAPI, run FinBERT on each article.
-    3. Return unified response with NewsCard-compatible fields.
+    Fetch news from NewsAPI and analyze sentiment with FinBERT.
     """
-
-    # ── Step 1: Cache check ───────────────────────────────────────────────────
-    cached = _fetch_cached_news(symbol)
-    if cached:
-        return {
-            "source":    "cache",
-            "sentiment": _compute_sentiment_summary(cached),
-            "news":      cached,
-        }
-
-    # ── Step 2: Fetch fresh from NewsAPI ─────────────────────────────────────
     try:
         if not NEWS_API_KEY:
             raise ValueError("NEWS_API_KEY not configured")
-
+        else : 
+            print("NEWS_API_KEY is Configured")
         company_name = get_realtime_stock_fn(symbol).get("name") or symbol
         params = {
             "q":        company_name,
@@ -380,13 +301,13 @@ def get_news(symbol: str, get_realtime_stock_fn) -> dict:
             "pageSize": 15,
             "apiKey":   NEWS_API_KEY,
         }
+        print( "company name : ",company_name)
         raw_articles = (
             requests.get("https://newsapi.org/v2/everything", params=params, timeout=10)
             .json()
             .get("articles", [])
         )
-
-        # ── Step 3: Run FinBERT + normalize to NewsCard contract ──────────────
+        print("raw articles ",raw_articles)
         formatted = []
         for a in raw_articles:
             title     = a.get("title", "") or ""
@@ -406,9 +327,19 @@ def get_news(symbol: str, get_realtime_stock_fn) -> dict:
                 "symbol":      symbol.upper(),
             })
 
+        # Compute sentiment summary
+        pos   = sum(1 for a in formatted if a.get("sentiment") == "Positive")
+        neg   = sum(1 for a in formatted if a.get("sentiment") == "Negative")
+        neu   = sum(1 for a in formatted if a.get("sentiment") == "Neutral")
+        total = pos + neu + neg or 1
+
         return {
             "source":    "live",
-            "sentiment": _compute_sentiment_summary(formatted),
+            "sentiment": {
+                "positive": round(pos / total * 100, 2),
+                "neutral":  round(neu / total * 100, 2),
+                "negative": round(neg / total * 100, 2),
+            },
             "news":      formatted,
         }
 
@@ -420,59 +351,6 @@ def get_news(symbol: str, get_realtime_stock_fn) -> dict:
             "news":      [],
         }
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ANALYZE-FULL  (used by AppScript → Google Sheets cache writer)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def get_news_for_cache(symbol: str) -> list[dict]:
-    """
-    Fetches news via yfinance, runs FinBERT on each article via _analyze_sentiment,
-    and returns a list of dicts for the /api/news/analyze-full endpoint.
-    AppScript reads this to write to Sheet2 (8 columns).
-    """
-    try:
-        ticker      = yf.Ticker(_ticker_sym(symbol))
-        raw_news    = ticker.news or []
-    except Exception as e:
-        print(f"[get_news_for_cache] yfinance fetch failed for {symbol}: {e}")
-        return []
-
-    if not raw_news:
-        return []
-
-    formatted = []
-    for item in raw_news:
-        # yfinance news structure: item has 'content' dict
-        content   = item.get("content") or item  # fallback: some versions return flat dict
-        title     = str(content.get("title")   or "").strip()
-        summary   = str(content.get("summary") or content.get("description") or "").strip()
-        pubdate   = str(content.get("pubDate") or content.get("providerPublishTime") or "").strip()
-        url       = str(content.get("canonicalUrl", {}).get("url") if isinstance(content.get("canonicalUrl"), dict) else content.get("url") or "").strip()
-        source    = str(content.get("provider", {}).get("displayName") if isinstance(content.get("provider"), dict) else content.get("source") or "").strip()
-
-        if not title:
-            continue
-
-        sent      = _analyze_sentiment(f"{title}. {summary}")
-        sentiment = sent["sentiment"]
-
-        formatted.append({
-            # ── AppScript / Sheet2 columns ─────────────────────────────────
-            "title":       title,
-            "confidence":  sent["confidence"],
-            "sentiment":   sentiment,
-            "pubdate":     pubdate,          # col 4 — sheet header is pubdate
-            "summary":     summary,
-            "symbol":      symbol.upper(),
-            "url":         url,              # col 7
-            "source":      source,           # col 8
-            # ── NewsCard contract extras ───────────────────────────────────
-            "publishedAt": pubdate,
-            "tags":        [sentiment.lower()],
-        })
-
-    return formatted
 
 
 # ─────────────────────────────────────────────────────────────────────────────
