@@ -58,6 +58,12 @@ def get_realtime_stock(symbol: str) -> dict:
         print(f"[get_realtime_stock] Info keys: {list(info.keys())[:10]}...")
 
         current    = _safe_float(info.get("currentPrice"))
+        
+        # If no current price, stock not found
+        if current is None:
+            print(f"[get_realtime_stock] {symbol}: No price data found, symbol may be invalid or delisted")
+            return {}
+        
         prev       = _safe_float(info.get("previousClose")) or current
         change     = round(current - prev, 2) if current is not None and prev is not None else None
         change_pct = round((change / prev) * 100, 2) if change is not None and prev else None
@@ -301,7 +307,7 @@ def get_news(symbol: str, get_realtime_stock_fn) -> dict:
             "pageSize": 15,
             "apiKey":   NEWS_API_KEY,
         }
-        print( "company name : ",company_name)
+        # print( "company name : ",company_name)
         raw_articles = (
             requests.get("https://newsapi.org/v2/everything", params=params, timeout=10)
             .json()
