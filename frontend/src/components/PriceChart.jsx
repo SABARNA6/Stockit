@@ -34,10 +34,18 @@ function setupCanvas(canvas) {
 }
 
 function makeScales(candles, W, H) {
+  if (!candles || candles.length === 0) return null;
+
+  const prices = candles
+    .map((c) => c.low)
+    .concat(candles.map((c) => c.high))
+    .filter((p) => p != null);
+  if (prices.length === 0) return null;
+
   const cw = W - PAD.left - PAD.right;
   const ch = H - PAD.top - PAD.bottom;
-  const lo = Math.min(...candles.map((c) => c.low)) * 0.995;
-  const hi = Math.max(...candles.map((c) => c.high)) * 1.005;
+  const lo = Math.min(...prices) * 0.995;
+  const hi = Math.max(...prices) * 1.005;
   const step = cw / candles.length;
   const px = (i) => PAD.left + (i + 0.5) * step;
   const py = (v) => PAD.top + (1 - (v - lo) / (hi - lo)) * ch;
@@ -92,7 +100,9 @@ export function drawCandles(canvas, candles) {
   if (!canvas || !candles?.length) return;
   const { ctx, W, H } = setupCanvas(canvas);
   const C = getColors();
-  const { lo, hi, step, px, py } = makeScales(candles, W, H);
+  const scales = makeScales(candles, W, H);
+  if (!scales) return; // No valid data to draw
+  const { lo, hi, step, px, py } = scales;
 
   ctx.fillStyle = C.bg;
   ctx.fillRect(0, 0, W, H);
@@ -122,7 +132,9 @@ export function drawLine(canvas, candles) {
   if (!canvas || !candles?.length) return;
   const { ctx, W, H } = setupCanvas(canvas);
   const C = getColors();
-  const { ch, lo, hi, px, py } = makeScales(candles, W, H);
+  const scales = makeScales(candles, W, H);
+  if (!scales) return; // No valid data to draw
+  const { ch, lo, hi, px, py } = scales;
 
   ctx.fillStyle = C.bg;
   ctx.fillRect(0, 0, W, H);
@@ -195,7 +207,9 @@ function drawMinimap(canvas, allCandles, viewStart, viewEnd) {
   ctx.fillStyle = C.bg;
   ctx.fillRect(0, 0, W, H);
 
-  const prices = allCandles.map((c) => c.close);
+  const prices = allCandles.map((c) => c.close).filter((p) => p != null);
+  if (!prices.length) return; // No valid prices to draw
+
   const lo = Math.min(...prices),
     hi = Math.max(...prices);
   const mpx = (i) => PAD.left + (i / (total - 1)) * cw;
@@ -238,13 +252,19 @@ export default function PriceChart({ symbol, theme }) {
     if (data?.candles?.length) setViewEnd(data.candles.length - 1);
   }, [data]);
 
-  const allCandles = data?.candles ?? [];
+  // Filter out candles with null/invalid values (backend may return None for missing data)
+  const allCandles = (data?.candles ?? []).filter(
+    (c) =>
+      c && c.open != null && c.high != null && c.low != null && c.close != null,
+  );
   const total = allCandles.length;
   const end = viewEnd ?? total - 1;
   const count = Math.min(MAX_VISIBLE, total);
   const start = Math.max(0, end - count + 1);
   const visibleCandles = allCandles.slice(start, end + 1);
-  const visibleVolumes = (data?.volumes ?? []).slice(start, end + 1);
+  const visibleVolumes = (data?.volumes ?? [])
+    .filter((v) => v && v.volume != null)
+    .slice(start, end + 1);
 
   const redraw = useCallback(() => {
     if (!data || !visibleCandles.length) return;

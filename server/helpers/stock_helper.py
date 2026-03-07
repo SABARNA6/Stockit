@@ -525,13 +525,20 @@ def get_chart_data(symbol: str, timeframe: str = "3M") -> dict:
         for _, row in history.iterrows():
             dv = row["Date"]
             ds = dv.strftime("%Y-%m-%d") if hasattr(dv, "strftime") else str(dv)
-            candles.append({
-                "timestamp": ds,
-                "open":      _safe_float(row["Open"]),
-                "high":      _safe_float(row["High"]),
-                "low":       _safe_float(row["Low"]),
-                "close":     _safe_float(row["Close"]),
-            })
+            open_v  = _safe_float(row["Open"])
+            high_v  = _safe_float(row["High"])
+            low_v   = _safe_float(row["Low"])
+            close_v = _safe_float(row["Close"])
+            
+            # Only include candles with all valid OHLC values
+            if open_v is not None and high_v is not None and low_v is not None and close_v is not None:
+                candles.append({
+                    "timestamp": ds,
+                    "open":      open_v,
+                    "high":      high_v,
+                    "low":       low_v,
+                    "close":     close_v,
+                })
 
         return {"candles": candles}
 
@@ -551,18 +558,24 @@ def get_volume_data(symbol: str, timeframe: str = "3M") -> dict:
         history = ticker.history(period=period)
         history.reset_index(inplace=True)
 
-        avg_vol = int(history["Volume"].mean()) if len(history) else 0
+        # Filter valid volumes first for accurate average
+        valid_vols = [_safe_int(row["Volume"]) for _, row in history.iterrows()]
+        valid_vols = [v for v in valid_vols if v is not None and v > 0]
+        avg_vol = int(sum(valid_vols) / len(valid_vols)) if valid_vols else 0
 
         volumes = []
         for _, row in history.iterrows():
             dv  = row["Date"]
             ds  = dv.strftime("%Y-%m-%d") if hasattr(dv, "strftime") else str(dv)
-            vol = _safe_int(row["Volume"]) or 0
-            volumes.append({
-                "timestamp": ds,
-                "volume":    vol,
-                "aboveAvg":  bool(avg_vol and vol > avg_vol),
-            })
+            vol = _safe_int(row["Volume"])
+            
+            # Only include volumes with valid data
+            if vol is not None and vol > 0:
+                volumes.append({
+                    "timestamp": ds,
+                    "volume":    vol,
+                    "aboveAvg":  bool(avg_vol and vol > avg_vol),
+                })
 
         return {"volumes": volumes, "avgVolume": avg_vol}
 
