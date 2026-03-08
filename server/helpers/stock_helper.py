@@ -11,6 +11,11 @@ from datetime import datetime
 from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
 from gradio_client import Client as GradioClient
+try:
+    import nsepython as nse
+    _NSE_AVAILABLE = True
+except Exception:
+    _NSE_AVAILABLE = False
 
 
 _finbert_client = None
@@ -44,6 +49,52 @@ def _safe_int(val, default=None):
         return default
 
 
+def _nse_fundamentals(symbol: str) -> dict:
+    """
+    Fetch fundamental data from NSEPython as a fallback.
+    Returns a flat dict with any fields it can provide; values are None if unavailable.
+    """
+    result = {
+        "peRatio": None, "pbRatio": None, "eps": None,
+        "marketCap": None, "faceValue": None,
+        "weekHigh52": None, "weekLow52": None,
+        "currentPrice": None, "vwap": None,
+    }
+    if not _NSE_AVAILABLE:
+        return result
+    try:
+        sym = symbol.strip().upper().replace(".NS", "").replace(".BO", "")
+        data   = nse.quote_equity(sym)
+        meta   = data.get("metadata",    {})
+        price  = data.get("priceInfo",   {})
+        sec    = data.get("securityInfo",{})
+        whl    = price.get("weekHighLow", {})
+
+        ltp    = _safe_float(price.get("lastPrice"))
+        pe     = _safe_float(meta.get("pdSymbolPe"))
+        issued = _safe_float(sec.get("issuedSize"))
+
+        result["peRatio"]     = pe
+        result["faceValue"]   = _safe_float(sec.get("faceValue"))
+        result["currentPrice"]= ltp
+        result["vwap"]        = _safe_float(price.get("vwap"))
+        result["weekHigh52"]  = _safe_float(whl.get("max"))
+        result["weekLow52"]   = _safe_float(whl.get("min"))
+
+        # EPS = Price / P/E
+        if ltp and pe and pe > 0:
+            result["eps"] = round(ltp / pe, 2)
+
+        # Market Cap = Price × shares issued
+        if ltp and issued:
+            result["marketCap"] = round(ltp * issued, 0)
+
+        # P/B not directly available from NSE quote — leave None
+    except Exception as e:
+        print(f"[_nse_fundamentals] {symbol}: {e}")
+    return result
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # REALTIME OVERVIEW
 # ─────────────────────────────────────────────────────────────────────────────
@@ -51,54 +102,123 @@ def _safe_int(val, default=None):
 def get_realtime_stock(symbol: str) -> dict:
     try:
         ticker_sym = _ticker_sym(symbol)
-        print(f"[get_realtime_stock] Fetching {ticker_sym}")
-        ticker = yf.Ticker(ticker_sym)
-        info   = ticker.info
-        
-        print(f"[get_realtime_stock] Info keys: {list(info.keys())[:10]}...")
+        ticker     = yf.Ticker(ticker_sym)
+        info       = ticker.info
 
-        current    = _safe_float(info.get("currentPrice"))
-        
-        # If no current price, stock not found
+        # ── Fetch NSE real-time data (NSE is primary for Indian price fields) ─
+        # yfinance can lag by 15-20 min during market hours; NSE is live.
+        nse_rt = {}
+        if _NSE_AVAILABLE:
+            try:
+                sym_clean  = symbol.strip().upper().replace(".NS", "").replace(".BO", "")
+                nse_eq     = nse.quote_equity(sym_clean)
+                pi         = nse_eq.get("priceInfo",    {})
+                meta       = nse_eq.get("metadata",     {})
+                sec        = nse_eq.get("securityInfo", {})
+                idhl       = pi.get("intraDayHighLow",  {})
+                whl        = pi.get("weekHighLow",      {})
+                ltp        = _safe_float(pi.get("lastPrice"))
+                issued     = _safe_float(sec.get("issuedSize"))
+                nse_rt = {
+                    "currentPrice":     ltp,
+                    "previousClose":    _safe_float(pi.get("previousClose")),
+                    "open":             _safe_float(pi.get("open")),
+                    "change":           _safe_float(pi.get("change")),
+                    "changePercent":    _safe_float(pi.get("pChange")),
+                    # NSE provides correct intraday VWAP (not a multi-day average)
+                    "vwap":             _safe_float(pi.get("vwap")),
+                    "dayHigh":          _safe_float(idhl.get("max")),
+                    "dayLow":           _safe_float(idhl.get("min")),
+                    # NSE provides actual circuit limits per stock (2/5/10/20%)
+                    # not a flat ±15% — these are strings like "2813.30"
+                    "upperCircuit":     _safe_float(pi.get("upperCP")),
+                    "lowerCircuit":     _safe_float(pi.get("lowerCP")),
+                    "fiftyTwoWeekHigh": _safe_float(whl.get("max")),
+                    "fiftyTwoWeekLow":  _safe_float(whl.get("min")),
+                    "peRatio":          _safe_float(meta.get("pdSymbolPe")),
+                    "marketCap":        round(ltp * issued, 0) if ltp and issued else None,
+                }
+            except Exception as e:
+                print(f"[get_realtime_stock] NSE fetch error for {symbol}: {e}")
+
+        # ── Helpers ───────────────────────────────────────────────────────────
+        def nse_or_yf(nse_key, yf_val):
+            """Prefer NSE (real-time) for price fields; yfinance as fallback."""
+            v = nse_rt.get(nse_key)
+            return v if v is not None else _safe_float(yf_val)
+
+        def yf_or_nse(yf_val, nse_key):
+            """Prefer yfinance for metadata; NSE as fallback."""
+            v = _safe_float(yf_val)
+            return v if v is not None else nse_rt.get(nse_key)
+
+        # ── Price fields (NSE-first) ───────────────────────────────────────────
+        current = nse_or_yf("currentPrice",  info.get("currentPrice"))
         if current is None:
             print(f"[get_realtime_stock] {symbol}: No price data found, symbol may be invalid or delisted")
             return {}
-        
-        prev       = _safe_float(info.get("previousClose")) or current
-        change     = round(current - prev, 2) if current is not None and prev is not None else None
-        change_pct = round((change / prev) * 100, 2) if change is not None and prev else None
 
-        upper_circuit = round(prev * 1.15, 2) if prev else None
-        lower_circuit = round(prev * 0.85, 2) if prev else None
+        prev       = nse_or_yf("previousClose", info.get("previousClose")) or current
+        open_price = nse_or_yf("open",           info.get("open"))
+        day_high   = nse_or_yf("dayHigh",        info.get("dayHigh"))
+        day_low    = nse_or_yf("dayLow",         info.get("dayLow"))
+        wk52_high  = nse_or_yf("fiftyTwoWeekHigh", info.get("fiftyTwoWeekHigh"))
+        wk52_low   = nse_or_yf("fiftyTwoWeekLow",  info.get("fiftyTwoWeekLow"))
 
-        vwap = None
-        try:
-            history = ticker.history(period="1mo")
-            if len(history) > 0:
-                tp   = (history["High"] + history["Low"] + history["Close"]) / 3
-                vwap = _safe_float(round((tp * history["Volume"]).sum() / history["Volume"].sum(), 2))
-        except Exception:
-            pass
+        # Change: use NSE's exchange-reported values; compute only if absent
+        change     = nse_rt.get("change")
+        change_pct = nse_rt.get("changePercent")
+        if change is None:
+            change = round(current - prev, 2) if prev else None
+        if change_pct is None:
+            change_pct = round((change / prev) * 100, 2) if change is not None and prev else None
+        else:
+            change_pct = round(change_pct, 2)
+
+        # VWAP: NSE intraday VWAP is correct; fallback computes from intraday 1m bars
+        vwap = nse_rt.get("vwap")
+        if vwap is None:
+            try:
+                hist_1d = ticker.history(period="1d", interval="1m")
+                if len(hist_1d) > 0:
+                    tp   = (hist_1d["High"] + hist_1d["Low"] + hist_1d["Close"]) / 3
+                    vwap = _safe_float(round(
+                        (tp * hist_1d["Volume"]).sum() / hist_1d["Volume"].sum(), 2
+                    ))
+            except Exception:
+                pass
+
+        # Circuit limits: NSE gives actual per-stock limits; ±15% only as last resort
+        upper_circuit = nse_rt.get("upperCircuit")
+        lower_circuit = nse_rt.get("lowerCircuit")
+        if upper_circuit is None and prev:
+            upper_circuit = round(prev * 1.15, 2)
+        if lower_circuit is None and prev:
+            lower_circuit = round(prev * 0.85, 2)
+
+        # P/E: NSE's pdSymbolPe is more up-to-date for Indian stocks
+        pe_ratio   = nse_or_yf("peRatio",   info.get("trailingPE"))
+        market_cap = yf_or_nse(info.get("marketCap"), "marketCap")
 
         return {
             "symbol":           symbol.upper(),
             "name":             info.get("longName") or info.get("shortName") or symbol.upper(),
-            "exchange":         info.get("exchange"),
+            "exchange":         info.get("exchange") or "NSE",
             "sector":           info.get("sector"),
             "industry":         info.get("industry"),
             "currentPrice":     current,
             "previousClose":    prev,
-            "open":             _safe_float(info.get("open")),
-            "dayHigh":          _safe_float(info.get("dayHigh")),
-            "dayLow":           _safe_float(info.get("dayLow")),
+            "open":             open_price,
+            "dayHigh":          day_high,
+            "dayLow":           day_low,
             "change":           change,
             "changePercent":    change_pct,
             "volume":           _safe_int(info.get("volume")),
             "avgVolume":        _safe_int(info.get("averageVolume")),
-            "marketCap":        _safe_float(info.get("marketCap")),
-            "fiftyTwoWeekHigh": _safe_float(info.get("fiftyTwoWeekHigh")),
-            "fiftyTwoWeekLow":  _safe_float(info.get("fiftyTwoWeekLow")),
-            "peRatio":          _safe_float(info.get("trailingPE")),
+            "marketCap":        market_cap,
+            "fiftyTwoWeekHigh": wk52_high,
+            "fiftyTwoWeekLow":  wk52_low,
+            "peRatio":          pe_ratio,
             "eps":              _safe_float(info.get("trailingEps")),
             "dividendYield":    _safe_float(info.get("dividendYield")),
             "roe":              _safe_float(info.get("returnOnEquity")),
@@ -244,6 +364,129 @@ def get_financials(symbol: str) -> dict:
         print(f"[get_financials] {symbol}: {e}")
         return {}
 
+def get_finacial_metric(symbol):
+    try:
+        # Add .NS suffix for NSE stocks if not present
+        ticker_symbol = f"{symbol}.NS" if not symbol.endswith('.NS') else symbol
+
+        ticker = yf.Ticker(ticker_symbol)
+        info   = ticker.info
+
+        # ── Fetch NSEPython data upfront for fallback ─────────────────────────
+        nse_data = _nse_fundamentals(symbol)
+
+        # ── Helper: yfinance first, nsepython fallback ────────────────────────
+        def yf_or_nse(yf_val, nse_key):
+            v = _safe_float(yf_val)
+            return v if v is not None else nse_data.get(nse_key)
+
+        # ── Basic fields ──────────────────────────────────────────────────────
+        revenue     = _safe_float(info.get('totalRevenue'))
+        net_profit  = _safe_float(info.get('netIncomeToCommon'))
+        ebitda      = _safe_float(info.get('ebitda'))
+        roe_raw     = _safe_float(info.get('returnOnEquity'))   # decimal e.g. 0.42
+        roa_raw     = _safe_float(info.get('returnOnAssets'))   # decimal e.g. 0.18
+        rev_growth  = _safe_float(info.get('revenueGrowth'))    # decimal e.g. 0.049
+        earn_growth = _safe_float(info.get('earningsGrowth'))   # decimal e.g. -0.139
+        eps_growth  = _safe_float(info.get('earningsQuarterlyGrowth'))
+
+        # P/E: yfinance first, fallback to NSE's pdSymbolPe
+        pe_ratio = yf_or_nse(info.get('trailingPE'), 'peRatio')
+
+        # P/B: yfinance only (NSE doesn't expose it directly)
+        pb_ratio = _safe_float(info.get('priceToBook'))
+
+        # Market Cap: yfinance first, fallback NSE computed (price × issuedSize)
+        market_cap = yf_or_nse(info.get('marketCap'), 'marketCap')
+
+        ebitda_margin = round(ebitda / revenue * 100, 2) if ebitda and revenue else None
+
+        # ── Net Profit fallback: compute from revenue × profit_margin ─────────
+        # (already taken from info, no better NSE source)
+
+        # ── PEG Ratio = P/E ÷ EPS CAGR% from income statement ────────────────
+        peg_ratio = None
+        fin = None
+        try:
+            fin = ticker.financials
+            if fin is not None and not fin.empty and 'Diluted EPS' in fin.index:
+                eps_series = fin.loc['Diluted EPS'].dropna().sort_index(ascending=False)
+                if len(eps_series) >= 2:
+                    eps_latest = float(eps_series.iloc[0])
+                    eps_oldest = float(eps_series.iloc[-1])
+                    n_years    = len(eps_series) - 1
+                    if eps_oldest > 0 and eps_latest > 0:
+                        eps_cagr_pct = ((eps_latest / eps_oldest) ** (1 / n_years) - 1) * 100
+                        if eps_cagr_pct > 0 and pe_ratio:
+                            peg_ratio = round(pe_ratio / eps_cagr_pct, 2)
+            # Fallback PEG: use NSE-computed EPS to derive growth vs sector PE
+            if peg_ratio is None and pe_ratio and nse_data.get('eps') and earn_growth:
+                earn_growth_pct = earn_growth * 100
+                if earn_growth_pct > 0:
+                    peg_ratio = round(pe_ratio / earn_growth_pct, 2)
+        except Exception:
+            pass
+
+        # ── Interest Coverage = EBIT / |Interest Expense| ────────────────────
+        interest_coverage = None
+        try:
+            if fin is None or fin.empty:
+                fin = ticker.financials
+            if fin is not None and not fin.empty:
+                ebit = None
+                interest_exp = None
+                if 'EBIT' in fin.index:
+                    ebit = _safe_float(fin.loc['EBIT'].iloc[0])
+                elif 'Operating Income' in fin.index:
+                    ebit = _safe_float(fin.loc['Operating Income'].iloc[0])
+                if 'Interest Expense Non Operating' in fin.index:
+                    interest_exp = _safe_float(fin.loc['Interest Expense Non Operating'].iloc[0])
+                elif 'Interest Expense' in fin.index:
+                    interest_exp = _safe_float(fin.loc['Interest Expense'].iloc[0])
+                if ebit is not None and interest_exp and interest_exp != 0:
+                    interest_coverage = round(ebit / abs(interest_exp), 2)
+        except Exception:
+            pass
+
+        # ── D/E, Current Ratio, Quick Ratio: yfinance, no NSE fallback ────────
+        debt_to_equity = _safe_float(info.get('debtToEquity'))
+        current_ratio  = _safe_float(info.get('currentRatio'))
+        quick_ratio    = _safe_float(info.get('quickRatio'))
+
+        # ── Return camelCase keys matching FundamentalsGrid.jsx ──────────────
+        return {
+            "profitability": {
+                "netProfit":    net_profit,
+                "ebitdaMargin": ebitda_margin,
+                "roe":          round(roe_raw * 100, 2) if roe_raw is not None else None,
+                "roa":          round(roa_raw * 100, 2) if roa_raw is not None else None,
+            },
+            "valuation": {
+                "peRatio":  pe_ratio,
+                "pegRatio": peg_ratio,
+                "pbRatio":  pb_ratio,
+                "evEbitda": _safe_float(info.get('enterpriseToEbitda')),
+            },
+            "growth": {
+                # revenueCagr5y & profitCagr5y: frontend uses fmt.num(v) + "%" → expects percent value
+                "revenueCagr5y": round(rev_growth  * 100, 2) if rev_growth  is not None else None,
+                "profitCagr5y":  round(earn_growth * 100, 2) if earn_growth is not None else None,
+                # epsGrowthTtm & salesGrowth: frontend uses fmt.pct(v * 100) → expects raw decimal
+                "epsGrowthTtm":  round(eps_growth, 4) if eps_growth is not None else None,
+                "salesGrowth":   round(rev_growth, 4) if rev_growth is not None else None,
+            },
+            "financialHealth": {
+                "debtToEquity":     debt_to_equity,
+                "interestCoverage": interest_coverage,
+                "currentRatio":     current_ratio,
+                "quickRatio":       quick_ratio,
+            },
+        }
+
+    except Exception as e:
+        print(f"Error fetching financial metrics for {symbol}: {e}")
+        return {}
+    
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SENTIMENT helper
@@ -262,7 +505,7 @@ def _analyze_sentiment(text: str) -> dict:
         result=result[0]
         # result is typically a dict like {"Positive": 0.08, "Negative": 0.14, "Neutral": 0.77}
         # or a string — print it once to confirm shape
-        print(f"[FinBERT] raw result: {result}")
+        # print(f"[FinBERT] raw result: {result}")
 
         if isinstance(result, dict):
             scores = {
@@ -313,7 +556,7 @@ def get_news(symbol: str, get_realtime_stock_fn) -> dict:
             .json()
             .get("articles", [])
         )
-        print("raw articles ",raw_articles)
+        # print("raw articles ",raw_articles)
         formatted = []
         for a in raw_articles:
             title     = a.get("title", "") or ""
@@ -368,34 +611,91 @@ def get_stock_trends(symbol: str) -> dict:
         ticker  = yf.Ticker(_ticker_sym(symbol))
         info    = ticker.info
 
-        current  = _safe_float(info.get("currentPrice")) or 0
-        prev     = _safe_float(info.get("previousClose")) or current
-        volume   = _safe_float(info.get("volume")) or 0
-        avg_vol  = _safe_float(info.get("averageVolume")) or volume or 1
-        beta     = _safe_float(info.get("beta")) or 1.0
+        current = _safe_float(info.get("currentPrice")) or 0
+        volume  = _safe_float(info.get("volume"))  or 0
+        avg_vol = _safe_float(info.get("averageVolume")) or volume or 1
+        beta    = _safe_float(info.get("beta")) or 1.0
 
-        chg_pct   = ((current - prev) / prev * 100) if prev else 0
-        direction = "bullish" if chg_pct > 0 else "bearish" if chg_pct < 0 else "neutral"
-        strength  = round(min(abs(chg_pct) * 10, 100), 1)
+        # ── Pull 3-month history for MA, ATR, delivery ─────────────────────
+        history = ticker.history(period="3mo")
 
+        # ── Trend: price vs 20-day and 50-day SMA ──────────────────────────
+        # Single day move is noise; proper trend = price position relative to MAs
+        direction = "neutral"
+        strength  = 50.0
+        if len(history) >= 10:
+            closes = history["Close"]
+            ma20   = float(closes.tail(20).mean()) if len(closes) >= 20 else float(closes.mean())
+            ma50   = float(closes.tail(50).mean()) if len(closes) >= 50 else float(closes.mean())
+
+            if current > ma20 and current > ma50:
+                direction = "bullish"
+            elif current < ma20 and current < ma50:
+                direction = "bearish"
+            else:
+                direction = "neutral"
+
+            # Strength = how far (%) price is from its own 20d MA, capped 0–100
+            pct_from_ma20 = abs((current - ma20) / ma20 * 100) if ma20 else 0
+            strength = round(min(pct_from_ma20 * 10, 100), 1)  # 10% above MA → 100 strength
+
+        # ── Volume: Spike = >2.5× avg, High = >1.2×, Low = <0.8× ──────────
         vol_ratio  = volume / avg_vol
-        vol_status = "High" if vol_ratio > 1.2 else "Low" if vol_ratio < 0.8 else "Normal"
-        volatility = "High" if beta > 1.2 else "Low" if beta < 0.8 else "Medium"
+        if vol_ratio >= 2.5:
+            vol_status = "Spike"
+        elif vol_ratio >= 1.2:
+            vol_status = "High"
+        elif vol_ratio < 0.8:
+            vol_status = "Low"
+        else:
+            vol_status = "Normal"
 
+        # Delivery % from historical vol consistency (proxy)
         delivery_pct = 65
-        try:
-            history      = ticker.history(period="1mo")
-            if len(history) > 5:
-                vol_std         = history["Volume"].std()
-                vol_mean        = history["Volume"].mean()
+        if len(history) > 5:
+            try:
+                vol_std         = float(history["Volume"].std())
+                vol_mean        = float(history["Volume"].mean())
                 vol_consistency = 1 - (vol_std / vol_mean if vol_mean > 0 else 1)
                 delivery_pct    = round(50 + (vol_ratio - 1) * 20 + vol_consistency * 20, 2)
                 delivery_pct    = round(min(max(delivery_pct, 35), 85), 2)
-        except Exception:
-            pass
+            except Exception:
+                pass
+
+        # ── ATR (14-day Average True Range) — actual formula ──────────────
+        # TR = max(High-Low, |High-prevClose|, |Low-prevClose|)
+        atr = None
+        if len(history) >= 2:
+            try:
+                h   = history["High"].values
+                l   = history["Low"].values
+                c   = history["Close"].values
+                trs = []
+                for i in range(1, len(h)):
+                    tr = max(h[i] - l[i], abs(h[i] - c[i-1]), abs(l[i] - c[i-1]))
+                    trs.append(tr)
+                atr = round(float(sum(trs[-14:]) / min(len(trs), 14)), 2)
+            except Exception:
+                pass
+        if atr is None:
+            atr = round(current * 0.02, 2)  # last resort fallback
+
+        # ── Risk level: combine beta + ATR as % of price ───────────────────
+        atr_pct = (atr / current * 100) if current else 2
+        if beta > 1.3 or atr_pct > 3:
+            risk_level = "High"
+        elif beta < 0.8 and atr_pct < 1.5:
+            risk_level = "Low"
+        else:
+            risk_level = "Medium"
+
+        volatility = "High" if beta > 1.2 else "Low" if beta < 0.8 else "Medium"
 
         return {
-            "trend":  {"direction": direction, "strength": strength},
+            "trend": {
+                "direction": direction,
+                "strength":  strength,
+            },
             "volume": {
                 "status":                vol_status,
                 "ratio":                 round(vol_ratio, 2),
@@ -405,8 +705,8 @@ def get_stock_trends(symbol: str) -> dict:
             "risk": {
                 "volatility": volatility,
                 "beta":       round(beta, 2),
-                "atr":        round(current * 0.02, 2),
-                "riskLevel":  volatility,
+                "atr":        atr,
+                "riskLevel":  risk_level,
             },
         }
 

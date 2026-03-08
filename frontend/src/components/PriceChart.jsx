@@ -113,7 +113,7 @@ export function drawCandles(canvas, candles) {
     });
     return;
   }
-  console.log(`[drawCandles] Drawing ${candles.length} candles`);
+  // console.log(`[drawCandles] Drawing ${candles.length} candles`);
   const { ctx, W, H } = setupCanvas(canvas);
   const C = getColors();
   const scales = makeScales(candles, W, H);
@@ -156,7 +156,7 @@ export function drawLine(canvas, candles) {
     });
     return;
   }
-  console.log(`[drawLine] Drawing line chart with ${candles.length} candles`);
+  // console.log(`[drawLine] Drawing line chart with ${candles.length} candles`);
   const { ctx, W, H } = setupCanvas(canvas);
   const C = getColors();
   const scales = makeScales(candles, W, H);
@@ -206,9 +206,9 @@ export function drawVolume(canvas, volumes, avgVolume) {
     });
     return;
   }
-  console.log(
-    `[drawVolume] Drawing volume bars for ${volumes.length} entries, avgVolume: ${avgVolume?.toLocaleString()}`,
-  );
+  // console.log(
+  //   `[drawVolume] Drawing volume bars for ${volumes.length} entries, avgVolume: ${avgVolume?.toLocaleString()}`,
+  // );
   const { ctx, W, H } = setupCanvas(canvas);
   const C = getColors();
 
@@ -293,9 +293,9 @@ export default function PriceChart({ symbol, theme }) {
 
   useEffect(() => {
     if (data?.candles?.length) {
-      console.log(
-        `[PriceChart] Data updated: ${data.candles.length} candles, ${data.volumes?.length || 0} volumes`,
-      );
+      // console.log(
+      //   `[PriceChart] Data updated: ${data.candles.length} candles, ${data.volumes?.length || 0} volumes`,
+      // );
       setViewEnd(data.candles.length - 1);
     } else {
       console.warn(`[PriceChart] No chart data available`, data);
@@ -326,9 +326,9 @@ export default function PriceChart({ symbol, theme }) {
       });
       return;
     }
-    console.log(
-      `[PriceChart] Redrawing with ${visibleCandles.length} visible candles (chart type: ${chartType})`,
-    );
+    // console.log(
+    //   `[PriceChart] Redrawing with ${visibleCandles.length} visible candles (chart type: ${chartType})`,
+    // );
     const draw = chartType === "line" ? drawLine : drawCandles;
     draw(mainRef.current, visibleCandles);
     drawVolume(volRef.current, visibleVolumes, data.avgVolume);

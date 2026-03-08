@@ -7,6 +7,7 @@ from helpers.stock_helper import (
     get_sparkline,
     get_historical_data,
     get_financials,
+    get_finacial_metric,
     get_news,
     get_stock_trends,
     get_recommendation,
@@ -86,7 +87,7 @@ def stock_recommendation(symbol):
 # ─────────────────────────────────────────────────────────────────────────────
 @stock_bp.get("/stocks/<symbol>/fundamentals")
 def stock_fundamentals(symbol):
-    return ok(get_financials(symbol.upper()))
+    return ok(get_finacial_metric(symbol.upper()))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
