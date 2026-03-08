@@ -1,17 +1,23 @@
-FROM python:3.10-slim
+FROM node:18-alpine AS frontend-build
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
 
+# Backend stage
+FROM python:3.10-slim
 WORKDIR /app
 
-# Install dependencies
+# Install Python dependencies
 COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend and client code
-# We keep them in their respective folders so relative paths in app.py work
+# Copy backend code
 COPY server/ .
 
-# Use port 10000 (standard for some cloud providers)
-EXPOSE 10000
+# Copy built frontend from previous stage
+COPY --from=frontend-build /frontend/dist ./dist
 
-# The app uses the PORT environment variable if provided
+EXPOSE 10000
 CMD ["python", "app.py"]

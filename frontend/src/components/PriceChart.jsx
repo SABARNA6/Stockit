@@ -34,13 +34,19 @@ function setupCanvas(canvas) {
 }
 
 function makeScales(candles, W, H) {
-  if (!candles || candles.length === 0) return null;
+  if (!candles || candles.length === 0) {
+    // console.warn(`[makeScales] No candles provided`);
+    return null;
+  }
 
   const prices = candles
     .map((c) => c.low)
     .concat(candles.map((c) => c.high))
     .filter((p) => p != null);
-  if (prices.length === 0) return null;
+  if (prices.length === 0) {
+    // console.warn(`[makeScales] No valid prices found in candles`);
+    return null;
+  }
 
   const cw = W - PAD.left - PAD.right;
   const ch = H - PAD.top - PAD.bottom;
@@ -49,6 +55,9 @@ function makeScales(candles, W, H) {
   const step = cw / candles.length;
   const px = (i) => PAD.left + (i + 0.5) * step;
   const py = (v) => PAD.top + (1 - (v - lo) / (hi - lo)) * ch;
+  // console.log(
+  //   `[makeScales] Created scales - price range: ₹${lo.toFixed(0)} to ₹${hi.toFixed(0)}, step: ${step.toFixed(2)}px`,
+  // );
   return { cw, ch, lo, hi, step, px, py };
 }
 
@@ -97,11 +106,21 @@ function drawCurrentPrice(ctx, W, close, py, C) {
 
 // ─── Draw functions ───────────────────────────────────────────────────────────
 export function drawCandles(canvas, candles) {
-  if (!canvas || !candles?.length) return;
+  if (!canvas || !candles?.length) {
+    console.warn(`[drawCandles] Missing canvas or candles`, {
+      canvas,
+      candlesLength: candles?.length,
+    });
+    return;
+  }
+  console.log(`[drawCandles] Drawing ${candles.length} candles`);
   const { ctx, W, H } = setupCanvas(canvas);
   const C = getColors();
   const scales = makeScales(candles, W, H);
-  if (!scales) return; // No valid data to draw
+  if (!scales) {
+    // console.warn(`[drawCandles] Failed to create scales`);
+    return; // No valid data to draw
+  }
   const { lo, hi, step, px, py } = scales;
 
   ctx.fillStyle = C.bg;
@@ -126,14 +145,25 @@ export function drawCandles(canvas, candles) {
   });
 
   drawCurrentPrice(ctx, W, candles[candles.length - 1].close, py, C);
+  // console.log(`[drawCandles] Successfully drew chart`);
 }
 
 export function drawLine(canvas, candles) {
-  if (!canvas || !candles?.length) return;
+  if (!canvas || !candles?.length) {
+    console.warn(`[drawLine] Missing canvas or candles`, {
+      canvas,
+      candlesLength: candles?.length,
+    });
+    return;
+  }
+  console.log(`[drawLine] Drawing line chart with ${candles.length} candles`);
   const { ctx, W, H } = setupCanvas(canvas);
   const C = getColors();
   const scales = makeScales(candles, W, H);
-  if (!scales) return; // No valid data to draw
+  if (!scales) {
+    // console.warn(`[drawLine] Failed to create scales`);
+    return; // No valid data to draw
+  }
   const { ch, lo, hi, px, py } = scales;
 
   ctx.fillStyle = C.bg;
@@ -165,10 +195,20 @@ export function drawLine(canvas, candles) {
   ctx.stroke();
 
   drawCurrentPrice(ctx, W, prices[prices.length - 1], py, C);
+  // console.log(`[drawLine] Successfully drew line chart`);
 }
 
 export function drawVolume(canvas, volumes, avgVolume) {
-  if (!canvas || !volumes?.length) return;
+  if (!canvas || !volumes?.length) {
+    console.warn(`[drawVolume] Missing canvas or volumes`, {
+      canvas,
+      volumesLength: volumes?.length,
+    });
+    return;
+  }
+  console.log(
+    `[drawVolume] Drawing volume bars for ${volumes.length} entries, avgVolume: ${avgVolume?.toLocaleString()}`,
+  );
   const { ctx, W, H } = setupCanvas(canvas);
   const C = getColors();
 
@@ -177,12 +217,14 @@ export function drawVolume(canvas, volumes, avgVolume) {
 
   const cw = W - PAD.left - PAD.right;
   const avg =
-    avgVolume || volumes.reduce((a, v) => a + v.volume, 0) / volumes.length;
-  const maxV = Math.max(...volumes.map((v) => v.volume));
+    avgVolume ||
+    volumes.reduce((a, v) => a + (v?.volume || 0), 0) / volumes.length;
+  const maxV = Math.max(...volumes.map((v) => v?.volume || 0));
   const step = cw / volumes.length;
   const bodyW = Math.max(step * 0.6, 2);
 
   volumes.forEach((v, i) => {
+    if (!v || v.volume == null) return;
     const bH = (v.volume / maxV) * (H - 4);
     const x = PAD.left + (i + 0.5) * step - bodyW / 2;
     ctx.fillStyle = v.volume > avg * 1.5 ? C.amber : C.blue;
@@ -194,6 +236,7 @@ export function drawVolume(canvas, volumes, avgVolume) {
   ctx.font = "9px var(--mono, monospace)";
   ctx.textAlign = "right";
   ctx.fillText("VOL", PAD.left - 6, H - 4);
+  // console.log(`[drawVolume] Successfully drew volume chart`);
 }
 
 // ─── Minimap ──────────────────────────────────────────────────────────────────
@@ -249,7 +292,14 @@ export default function PriceChart({ symbol, theme }) {
   }, [timeframe]);
 
   useEffect(() => {
-    if (data?.candles?.length) setViewEnd(data.candles.length - 1);
+    if (data?.candles?.length) {
+      console.log(
+        `[PriceChart] Data updated: ${data.candles.length} candles, ${data.volumes?.length || 0} volumes`,
+      );
+      setViewEnd(data.candles.length - 1);
+    } else {
+      console.warn(`[PriceChart] No chart data available`, data);
+    }
   }, [data]);
 
   // Filter out candles with null/invalid values (backend may return None for missing data)
@@ -262,12 +312,25 @@ export default function PriceChart({ symbol, theme }) {
   const count = Math.min(MAX_VISIBLE, total);
   const start = Math.max(0, end - count + 1);
   const visibleCandles = allCandles.slice(start, end + 1);
+
+  // Volumes are now pre-aligned with candles by timestamp in useChart
+  // So we can safely slice them using the same indices
   const visibleVolumes = (data?.volumes ?? [])
-    .filter((v) => v && v.volume != null)
+    .filter((v) => v && v.volume != null && v.volume > 0)
     .slice(start, end + 1);
 
   const redraw = useCallback(() => {
-    if (!data || !visibleCandles.length) return;
+    if (!data || !visibleCandles.length) {
+      console.warn(`[PriceChart] Skipping redraw - missing data or candles`, {
+        hasData: !!data,
+        candlesLength: visibleCandles.length,
+        mainRefExists: !!mainRef.current,
+      });
+      return;
+    }
+    console.log(
+      `[PriceChart] Redrawing with ${visibleCandles.length} visible candles (chart type: ${chartType})`,
+    );
     const draw = chartType === "line" ? drawLine : drawCandles;
     draw(mainRef.current, visibleCandles);
     drawVolume(volRef.current, visibleVolumes, data.avgVolume);

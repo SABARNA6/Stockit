@@ -96,29 +96,80 @@ export function useStockData(symbol) {
 export function useChart(symbol, timeframe) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Clear cache when symbol or timeframe changes
+  useEffect(() => {
+    const key = `chart:${symbol}:${timeframe}`;
+    delete CACHE[key];
+    // console.log(`[useChart] Cache cleared for key: ${key}`);
+  }, [symbol, timeframe]);
 
   useEffect(() => {
     if (!symbol) return;
     let cancelled = false;
     setLoading(true);
+    setError(null);
     const key = `chart:${symbol}:${timeframe}`;
-    cached(key, TTL.chart, () =>
-      Promise.all([
-        stockApi.chart(symbol, timeframe),
-        stockApi.volume(symbol, timeframe),
-      ]).then(([c, v]) => ({
-        candles: c.candles,
-        volumes: v.volumes,
-        avgVolume: v.avgVolume,
-      })),
-    )
+
+    // Fetch fresh data directly (skip cache to ensure fresh data)
+    Promise.all([
+      stockApi.chart(symbol, timeframe).catch((err) => {
+        console.error(`[useChart] chart API failed for ${symbol}:`, err);
+        return { candles: [] };
+      }),
+      stockApi.volume(symbol, timeframe).catch((err) => {
+        console.error(`[useChart] volume API failed for ${symbol}:`, err);
+        return { volumes: [], avgVolume: 0 };
+      }),
+    ])
+      .then(([c, v]) => {
+        // console.log(
+        //   `[useChart] Received API data: ${c?.candles?.length || 0} candles, ${v?.volumes?.length || 0} volumes`,
+        // );
+
+        // Align volumes with candles by timestamp to prevent misalignment
+        const candles = c?.candles || [];
+        const volumesMap = {};
+        (v?.volumes || []).forEach((vol) => {
+          if (vol?.timestamp) {
+            volumesMap[vol.timestamp] = vol;
+          }
+        });
+
+        // Reconstruct volumes array aligned with candles
+        const alignedVolumes = candles.map(
+          (candle) =>
+            volumesMap[candle.timestamp] || {
+              timestamp: candle.timestamp,
+              volume: 0,
+            },
+        );
+
+        // console.log(
+        //   `[useChart] Aligned volumes: ${alignedVolumes.length} entries aligned with ${candles.length} candles`,
+        // );
+
+        return {
+          candles,
+          volumes: alignedVolumes,
+          avgVolume: v?.avgVolume || 0,
+        };
+      })
       .then((d) => {
         if (cancelled) return;
+        // console.log(`[useChart] Setting chart data for ${symbol}:`, {
+        //   candles: d.candles?.length,
+        //   volumes: d.volumes?.length,
+        //   avgVolume: d.avgVolume,
+        // });
         setData(d);
         setLoading(false);
       })
-      .catch(() => {
+      .catch((err) => {
         if (cancelled) return;
+        console.error(`[useChart] Fatal error for ${symbol}:`, err);
+        setError(err);
         setLoading(false);
       });
 
@@ -127,7 +178,7 @@ export function useChart(symbol, timeframe) {
     };
   }, [symbol, timeframe]);
 
-  return { data, loading };
+  return { data, loading, error };
 }
 
 // ─── useFundamentals ──────────────────────────────────────────────────────────
