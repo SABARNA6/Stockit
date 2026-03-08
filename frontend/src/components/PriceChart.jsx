@@ -315,9 +315,7 @@ export default function PriceChart({ symbol, theme }) {
 
   // Volumes are now pre-aligned with candles by timestamp in useChart
   // So we can safely slice them using the same indices
-  const visibleVolumes = (data?.volumes ?? [])
-    .filter((v) => v && v.volume != null && v.volume > 0)
-    .slice(start, end + 1);
+  const visibleVolumes = (data?.volumes ?? []).slice(start, end + 1);
 
   const redraw = useCallback(() => {
     if (!data || !visibleCandles.length) {
