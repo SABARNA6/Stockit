@@ -93,22 +93,54 @@ def get_finacial_metric(symbol):
         ticker = yf.Ticker(ticker_symbol)
         info = ticker.info
         
-        # Extract metrics
+        # Extract comprehensive financial metrics
         revenue = info.get('totalRevenue')
         net_profit = info.get('netIncomeToCommon')
         ebitda = info.get('ebitda')
+        market_cap = info.get('marketCap')
+        pe_ratio = info.get('trailingPE')
+        pb_ratio = info.get('priceToBook')
+        debt_to_equity = info.get('debtToEquity')
+        roe = info.get('returnOnEquity')
+        eps = info.get('trailingEps')
+        dividend_yield = info.get('dividendYield')
         
-        metrics = {
-            "Revenue": revenue,
-            "Net Profit": net_profit,
-            "EBITDA Margin": None
-        }
-
-        # Calculate EBITDA Margin if possible
+        # Calculate additional metrics
+        ebitda_margin = None
         if ebitda and revenue:
-            metrics["EBITDA Margin"] = (ebitda / revenue) * 100
+            ebitda_margin = (ebitda / revenue) * 100
             
-        return metrics
+        profit_margin = None
+        if net_profit and revenue:
+            profit_margin = (net_profit / revenue) * 100
+        
+        # Structure data as expected by frontend
+        return {
+            "profitability": {
+                "revenue": revenue,
+                "net_profit": net_profit,
+                "ebitda": ebitda,
+                "ebitda_margin": ebitda_margin,
+                "profit_margin": profit_margin,
+                "roe": roe,
+                "eps": eps
+            },
+            "valuation": {
+                "market_cap": market_cap,
+                "pe_ratio": pe_ratio,
+                "pb_ratio": pb_ratio,
+                "dividend_yield": dividend_yield
+            },
+            "growth": {
+                "revenue_growth": info.get('revenueGrowth'),
+                "earnings_growth": info.get('earningsGrowth')
+            },
+            "financialHealth": {
+                "debt_to_equity": debt_to_equity,
+                "current_ratio": info.get('currentRatio'),
+                "quick_ratio": info.get('quickRatio')
+            }
+        }
 
     except Exception as e:
         print(f"Error fetching financial metrics for {symbol}: {e}")

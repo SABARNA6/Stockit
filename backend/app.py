@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import functions
 import os
+import pandas as pd
 
 import yfinance
 
@@ -98,9 +99,9 @@ def financials():
 @app.route('/api/company/search', methods=['GET'])
 def search_company():
     """
-    Search company - tries Google Sheets first, falls back to news analysis.
+    Search company - returns basic company info for the symbol.
     Query Params: symbol
-    Example: /api/company/search?symbol=ADANIPORTS
+    Example: /api/company/search?symbol=TCS
     """
     symbol = request.args.get('symbol')
     if not symbol:
@@ -108,28 +109,25 @@ def search_company():
     
     print(f"[search_company] Searching for symbol: {symbol}")
     
-    # Try Google Sheets first if URL is configured
-    if GOOGLE_SHEETS_URL:
-        try:
-            url = f"{GOOGLE_SHEETS_URL}?symbol={symbol}"
-            print(f"[search_company] Attempting Google Sheets lookup: {url}")
-            response = requests.get(url, timeout=30)
-            data = response.json()
-            print(f"[search_company] Google Sheets response: {data}")
-            
-            if data.get('data') and len(data['data']) > 0:
-                print(f"[search_company] Found {len(data['data'])} records in Google Sheets")
-                return jsonify(data)
-            else:
-                print("[search_company] No data found in Google Sheets, falling back to news analysis")
-        except Exception as e:
-            print(f"[search_company] Google Sheets lookup failed: {e}")
-    else:
-        print("[search_company] Google Sheets URL not configured")
-    
-    # Fallback to news analysis - pass the symbol parameter
-    print(f"[search_company] Falling back to news analysis for {symbol}")
-    return analyze_full_news(symbol)
+    try:
+        # Get basic company info
+        info = functions.get_symbol_info(symbol)
+        if not info:
+            return jsonify({"data": []}), 200
+        
+        # Return in expected format
+        result = {
+            "data": [{
+                "symbol": symbol,
+                "name": info.get('longName', symbol),
+                "exchange": info.get('exchange', 'NSE'),
+                "type": "EQUITY"
+            }]
+        }
+        return jsonify(result)
+    except Exception as e:
+        print(f"[search_company] Error: {e}")
+        return jsonify({"data": []}), 200
 
 # @app.route('/api/company/news', methods=['GET'])
 # def news():
@@ -310,6 +308,252 @@ def analyze_news_sentiment():
         return jsonify(sentiment)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# ============================================================================
+# NEW ENDPOINTS: /api/stocks/* - Frontend expects these routes
+# ============================================================================
+
+@app.route('/api/stocks/<symbol>', methods=['GET'])
+def get_stock_overview(symbol):
+    """Get stock overview/info."""
+    try:
+        info = functions.get_symbol_info(symbol)
+        return jsonify({"data": info})
+    except Exception as e:
+        print(f"[get_stock_overview] Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/stocks/<symbol>/sparkline', methods=['GET'])
+def get_stock_sparkline(symbol):
+    """Get sparkline data for mini chart."""
+    try:
+        points = request.args.get('points', 12, type=int)
+        # Add .NS suffix for NSE stocks
+        ticker_symbol = f"{symbol}.NS" if not symbol.endswith('.NS') else symbol
+        ticker = yfinance.Ticker(ticker_symbol)
+        hist = ticker.history(period='3mo')
+        if hist.empty:
+            return jsonify({"data": []}), 200
+        # Return last N points
+        data = hist['Close'].tail(points).tolist()
+        return jsonify({"data": data})
+    except Exception as e:
+        print(f"[get_stock_sparkline] Error: {e}")
+        return jsonify({"data": []}), 200
+
+@app.route('/api/stocks/<symbol>/chart', methods=['GET'])
+def get_stock_chart(symbol):
+    """Get chart data for selected timeframe."""
+    try:
+        timeframe = request.args.get('timeframe', '3M')
+        # Map timeframe to period
+        period_map = {'1W': '1wk', '1M': '1mo', '3M': '3mo', '6M': '6mo', '1Y': '1y', 'ALL': 'max'}
+        period = period_map.get(timeframe, '3mo')
+        
+        # Add .NS suffix for NSE stocks
+        ticker_symbol = f"{symbol}.NS" if not symbol.endswith('.NS') else symbol
+        ticker = yfinance.Ticker(ticker_symbol)
+        hist = ticker.history(period=period)
+        
+        if hist.empty:
+            return jsonify({"candles": []}), 200
+        
+        # Convert to frontend expected format
+        candles = []
+        for date, row in hist.iterrows():
+            candles.append({
+                'timestamp': int(date.timestamp() * 1000),  # Convert to milliseconds
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
+                'close': float(row['Close'])
+            })
+        
+        return jsonify({"candles": candles})
+    except Exception as e:
+        print(f"[get_stock_chart] Error: {e}")
+        return jsonify({"candles": []}), 200
+
+@app.route('/api/stocks/<symbol>/volume', methods=['GET'])
+def get_stock_volume(symbol):
+    """Get volume data."""
+    try:
+        timeframe = request.args.get('timeframe', '3M')
+        period_map = {'1W': '1wk', '1M': '1mo', '3M': '3mo', '6M': '6mo', '1Y': '1y', 'ALL': 'max'}
+        period = period_map.get(timeframe, '3mo')
+        
+        # Add .NS suffix for NSE stocks
+        ticker_symbol = f"{symbol}.NS" if not symbol.endswith('.NS') else symbol
+        ticker = yfinance.Ticker(ticker_symbol)
+        hist = ticker.history(period=period)
+        
+        if hist.empty:
+            return jsonify({"volumes": [], "avgVolume": 0}), 200
+        
+        # Convert to frontend expected format
+        volumes = []
+        total_volume = 0
+        for date, row in hist.iterrows():
+            volume = int(row['Volume'])
+            volumes.append({
+                'timestamp': int(date.timestamp() * 1000),  # Convert to milliseconds
+                'volume': volume
+            })
+            total_volume += volume
+        
+        avg_volume = total_volume / len(volumes) if volumes else 0
+        
+        return jsonify({"volumes": volumes, "avgVolume": int(avg_volume)})
+    except Exception as e:
+        print(f"[get_stock_volume] Error: {e}")
+        return jsonify({"volumes": [], "avgVolume": 0}), 200
+
+@app.route('/api/stocks/<symbol>/trends', methods=['GET'])
+def get_stock_trends(symbol):
+    """Get trend signals."""
+    try:
+        # Add .NS suffix for NSE stocks
+        ticker_symbol = f"{symbol}.NS" if not symbol.endswith('.NS') else symbol
+        ticker = yfinance.Ticker(ticker_symbol)
+        hist = ticker.history(period='3mo')
+        
+        if hist.empty or len(hist) < 2:
+            return jsonify({"data": {"trend": "Neutral", "current_price": 0, "ma_20": 0, "ma_50": 0}}), 200
+        
+        # Simple trend calculation
+        current = float(hist['Close'].iloc[-1])
+        ma_20 = float(hist['Close'].tail(min(20, len(hist))).mean())
+        ma_50 = float(hist['Close'].tail(min(50, len(hist))).mean()) if len(hist) >= 50 else ma_20
+        
+        trend = "Uptrend" if current > ma_20 > ma_50 else "Downtrend" if current < ma_20 < ma_50 else "Neutral"
+        
+        data = {
+            'trend': trend,
+            'current_price': current,
+            'ma_20': ma_20,
+            'ma_50': ma_50
+        }
+        return jsonify({"data": data})
+    except Exception as e:
+        print(f"[get_stock_trends] Error: {e}")
+        return jsonify({"data": {"trend": "Neutral", "current_price": 0, "ma_20": 0, "ma_50": 0}}), 200
+
+@app.route('/api/stocks/<symbol>/recommendation', methods=['GET'])
+def get_stock_recommendation(symbol):
+    """Get investment recommendation."""
+    try:
+        info = functions.get_symbol_info(symbol)
+        # Use recommendationKey if available
+        recommendation = info.get('recommendationKey', 'hold')
+        
+        data = {
+            'recommendation': recommendation,
+            'target_price': info.get('targetMeanPrice'),
+            'number_of_analysts': info.get('numberOfAnalystOpinions')
+        }
+        return jsonify({"data": data})
+    except Exception as e:
+        print(f"[get_stock_recommendation] Error: {e}")
+        return jsonify({"data": {"recommendation": "hold", "target_price": None, "number_of_analysts": 0}}), 200
+
+@app.route('/api/stocks/<symbol>/fundamentals', methods=['GET'])
+def get_stock_fundamentals(symbol):
+    """Get fundamental metrics."""
+    try:
+        data = functions.get_finacial_metric(symbol)
+        return jsonify({"data": data})
+    except Exception as e:
+        print(f"[get_stock_fundamentals] Error: {e}")
+        return jsonify({"data": {}}), 200
+
+@app.route('/api/stocks/<symbol>/news', methods=['GET'])
+def get_stock_news(symbol):
+    """Get news for stock."""
+    try:
+        # Use the existing analyze_full_news function
+        news_data = functions.get_news_data(symbol)
+        if not news_data:
+            return jsonify({"data": []})
+        
+        # Extract headlines for sentiment analysis
+        headlines = [item.get('content', {}).get('title') for item in news_data if item.get('content', {}).get('title')]
+        
+        if headlines:
+            analyzed = functions.analyze_headlines_with_finbert(headlines)
+            formatted_data = []
+            for news_item, analysis_item in zip(news_data, analyzed.get("details", [])):
+                content = news_item.get("content", {})
+                formatted_data.append({
+                    "title": content.get("title", ""),
+                    "summary": content.get("summary", ""),
+                    "pubdate": content.get("pubDate", ""),
+                    "sentiment": analysis_item.get("sentiment", "Neutral"),
+                    "confidence": analysis_item.get("confidence", 0)
+                })
+            return jsonify({"data": formatted_data})
+        else:
+            return jsonify({"data": []})
+    except Exception as e:
+        print(f"[get_stock_news] Error: {e}")
+        return jsonify({"data": []}), 200
+
+@app.route('/api/stocks/<symbol>/historical', methods=['GET'])
+def get_stock_historical(symbol):
+    """Get historical data with pagination."""
+    try:
+        period = request.args.get('period', '1mo')
+        page = request.args.get('page', 1, type=int)
+        limit = request.args.get('limit', 8, type=int)
+        
+        # Add .NS suffix for NSE stocks
+        ticker_symbol = f"{symbol}.NS" if not symbol.endswith('.NS') else symbol
+        ticker = yfinance.Ticker(ticker_symbol)
+        hist = ticker.history(period=period)
+        
+        if hist.empty:
+            return jsonify({
+                "prices": [],
+                "pagination": {"page": page, "limit": limit, "total": 0}
+            }), 200
+        
+        # Reverse to show newest first
+        hist = hist.iloc[::-1]
+        
+        # Calculate change percentages
+        hist['ChangePercent'] = hist['Close'].pct_change() * 100
+        
+        # Paginate
+        start = (page - 1) * limit
+        end = start + limit
+        paginated = hist.iloc[start:end]
+        
+        prices = []
+        for date, row in paginated.iterrows():
+            change_pct = float(row['ChangePercent']) if not pd.isna(row['ChangePercent']) else 0.0
+            prices.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'open': float(row['Open']),
+                'high': float(row['High']),
+                'low': float(row['Low']),
+                'close': float(row['Close']),
+                'volume': int(row['Volume']),
+                'changePercent': change_pct
+            })
+        
+        return jsonify({
+            "prices": prices,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "total": len(hist)
+            }
+        }), 200
+    except Exception as e:
+        print(f"[get_stock_historical] Error: {e}")
+        return jsonify({
+            "prices": [],
+            "pagination": {"page": page, "limit": limit, "total": 0}
+        }), 200
 
 if __name__ == '__main__':
     import os
