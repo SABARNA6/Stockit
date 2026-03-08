@@ -3,9 +3,20 @@ const BASE =
   typeof window !== "undefined" ? window.STOCK_API_BASE || "/api" : "/api";
 
 async function apiFetch(path) {
-  const res = await fetch(`${BASE}${path}`);
-  if (!res.ok) throw new Error(`API ${res.status}: ${path}`);
-  return res.json();
+  const fullUrl = `${BASE}${path}`;
+  console.error(`[apiFetch] Calling: ${fullUrl}`);
+  try {
+    const res = await fetch(fullUrl);
+    if (!res.ok) {
+      console.error(`[apiFetch] HTTP ${res.status} from ${fullUrl}`);
+      throw new Error(`API ${res.status}: ${path}`);
+    }
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.error(`[apiFetch] Failed to fetch ${fullUrl}:`, err.message);
+    throw err;
+  }
 }
 
 // ─── ENDPOINTS ───────────────────────────────────────────────────────────────
