@@ -5,5 +5,4 @@ venv/
 .git/
 .vscode/
 # client/ removed to allow single-container build
-frontend/
 FinBERT_FinancialSentimentAnalysis/
