@@ -1,8 +1,0 @@
-flask
-flask-cors
-yfinance
-nsepython
-pandas
-requests
-gradio_client
-dotenv
