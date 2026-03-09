@@ -15,6 +15,11 @@ from helpers.stock_helper import (
     get_volume_data,
     search_company,
 )
+import os
+import requests
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 stock_bp = Blueprint("stocks", __name__, url_prefix="/api")
 
@@ -93,8 +98,62 @@ def stock_fundamentals(symbol):
 # ─────────────────────────────────────────────────────────────────────────────
 # /api/stocks/<symbol>/news   → used by frontend
 # ─────────────────────────────────────────────────────────────────────────────
+def _normalize_sheets_news(raw, symbol: str) -> dict:
+    """
+    Normalise a Google Sheets JSON response (flat list or dict) into the same
+    shape that get_news() returns so the frontend never sees a difference.
+    """
+    # Sheets returns {"symbol": "...", "data": [...]}
+    # fall back to {"news": [...]} or a bare list
+    if isinstance(raw, dict):
+        articles = raw.get("data") or raw.get("news", [])
+    elif isinstance(raw, list):
+        articles = raw
+    else:
+        articles = []
+
+    formatted = []
+    for a in articles:
+        sentiment = (a.get("sentiment") or "Neutral").capitalize()
+        formatted.append({
+            "title":       a.get("title", ""),
+            "summary":     a.get("summary") or a.get("description", ""),
+            "source":      a.get("source", ""),
+            "publishedAt": a.get("publishedAt") or a.get("published_at") or a.get("pubdate", ""),
+            "url":         a.get("url", ""),
+            "tags":        a.get("tags") or [sentiment.lower()],
+            "sentiment":   sentiment,
+            "confidence":  a.get("confidence", 1.0),
+            "symbol":      symbol.upper(),
+        })
+
+    pos   = sum(1 for a in formatted if a["sentiment"] == "Positive")
+    neg   = sum(1 for a in formatted if a["sentiment"] == "Negative")
+    neu   = sum(1 for a in formatted if a["sentiment"] == "Neutral")
+    total = pos + neu + neg or 1
+
+    return {
+        "source": "cache",
+        "sentiment": {
+            "positive": round(pos / total * 100, 2),
+            "neutral":  round(neu / total * 100, 2),
+            "negative": round(neg / total * 100, 2),
+        },
+        "news": formatted,
+    }
+
+
 @stock_bp.get("/stocks/<symbol>/news")
 def stock_news(symbol):
+    google_sheet = os.getenv("GOOGLE_SHEETS_URL")
+    if google_sheet:
+        url = f"{google_sheet}?symbol={symbol}"
+        response = requests.get(url)
+        if response.ok:
+            print("Cache Hit")
+            # print(response.json())
+            return ok(_normalize_sheets_news(response.json(), symbol))
+    print("cache Miss")
     return ok(get_news(symbol.upper(), get_realtime_stock))
 
 
