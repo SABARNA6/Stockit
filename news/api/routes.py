@@ -246,7 +246,17 @@ def health():
         }
     })
 
-
+@app.route("/api/load-stocks", methods=["POST"])
+def load_stocks():
+    body   = request.get_json(force=True)
+    stocks = body.get("stocks", [])
+    if not stocks:
+        return jsonify({"error": "No stocks received"}), 400
+    load_knowledge_graph(stocks)
+    return jsonify({
+        "status": "ok",
+        "loaded": len(stocks)
+    })
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     print(f"🚀 Flask API on http://0.0.0.0:{port}")
