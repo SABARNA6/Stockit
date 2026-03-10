@@ -17,7 +17,7 @@ from datetime import datetime
 # ─────────────────────────────────────────────
 #  Gemini config
 # ─────────────────────────────────────────────
-GEMINI_MODEL   = "gemini-2.5-flash-lite-preview-06-17"  # free, 1000 RPD
+GEMINI_MODEL   = "gemini-2.5-flash-lite"  # free, 1000 RPD
 GEMINI_URL     = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 BATCH_SIZE     = 10
 RETRY_ATTEMPTS = 3
