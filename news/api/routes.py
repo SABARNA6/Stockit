@@ -5,7 +5,7 @@ Flask routes — Apps Script → Layer 1 → Layer 2 → Logs to Google Sheets
 
 from flask import Flask, request, jsonify
 from datetime import datetime
-import sys, os, json, threading
+import sys, os, json, threading ,requests
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from layers.layer1_content     import build_unified_profile
@@ -104,76 +104,78 @@ def _load_nse_stocks():
 #  LOG LAYER 1  →  L1_Logs sheet
 #  One row per financially relevant article
 # ─────────────────────────────────────────────
-def _log_l1(profiles: list):
-    headers = [
-        "timestamp", "news_id", "title",
-        "tickers_found", "event_type", "themes",
-        "sentiment", "urgency_score", "relevance_score", "source"
-    ]
-    ws = _get_or_create_tab(SHEET_L1, headers)
-    if not ws or not profiles:
+
+APPSCRIPT_WEBHOOK = os.environ.get("APPSCRIPT_WEBHOOK_URL")
+
+def _post_to_appscript(payload: dict):
+    """Send log data back to Apps Script doPost."""
+    if not APPSCRIPT_WEBHOOK:
+        print("[LOG] ❌ APPSCRIPT_WEBHOOK_URL not set in env vars")
         return
     try:
-        ts   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        rows = [
-            [
+        r = requests.post(
+            APPSCRIPT_WEBHOOK,
+            json=payload,
+            timeout=30,
+            # Apps Script requires redirects to be followed
+            allow_redirects=True
+        )
+        print(f"[LOG] ✅ Apps Script responded: {r.status_code}")
+    except Exception as e:
+        print(f"[LOG] ❌ Failed to post to Apps Script: {e}")
+
+
+def _log_l1(profiles: list):
+    if not profiles:
+        return
+    ts   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    rows = [
+        [
+            ts,
+            p.get("id", ""),
+            p.get("title", "")[:100],
+            ", ".join(e["ticker"] for e in p.get("entities", [])) or "—",
+            p.get("event", {}).get("event_type", ""),
+            p.get("sentiment", {}).get("label", ""),
+            p.get("sentiment", {}).get("urgency_score", 0),
+            p.get("relevance_score", 0),
+            p.get("source", ""),
+        ]
+        for p in profiles
+    ]
+    threading.Thread(
+        target=_post_to_appscript,
+        args=({"type": "l1_logs", "rows": rows},),
+        daemon=True
+    ).start()
+
+
+def _log_l2(profiles: list):
+    if not profiles:
+        return
+    ts   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    rows = []
+    for p in profiles:
+        for e in p.get("affected_entities", []):
+            rows.append([
                 ts,
                 p.get("id", ""),
                 p.get("title", "")[:100],
-                ", ".join(e["ticker"] for e in p.get("entities", [])) or "—",
-                p.get("event", {}).get("event_type", ""),
-                ", ".join(p.get("event", {}).get("themes", [])) or "—",
-                p.get("sentiment", {}).get("label", ""),
-                p.get("sentiment", {}).get("urgency_score", 0),
-                p.get("relevance_score", 0),
-                p.get("source", ""),
-            ]
-            for p in profiles
-        ]
-        ws.append_rows(rows, value_input_option="USER_ENTERED")
-        print(f"[L1_Logs] ✅ Logged {len(rows)} rows to '{SHEET_L1}'")
-    except Exception as e:
-        print(f"[L1_Logs] ❌ Logging failed: {e}")
-
-
-# ─────────────────────────────────────────────
-#  LOG LAYER 2  →  L2_Logs sheet
-#  One row per affected entity per article
-# ─────────────────────────────────────────────
-def _log_l2(profiles: list):
-    headers = [
-        "timestamp", "news_id", "news_title",
-        "ticker", "company", "industry",
-        "impact_type", "direction", "confidence",
-        "reason", "sentiment"
-    ]
-    ws = _get_or_create_tab(SHEET_L2, headers)
-    if not ws or not profiles:
-        return
-    try:
-        ts   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        rows = []
-        for p in profiles:
-            for e in p.get("affected_entities", []):
-                rows.append([
-                    ts,
-                    p.get("id", ""),
-                    p.get("title", "")[:100],
-                    e.get("ticker", ""),
-                    e.get("name", ""),
-                    e.get("industry", ""),
-                    e.get("impact_type", ""),
-                    e.get("direction", ""),
-                    e.get("confidence", 0),
-                    e.get("reason", "")[:150],
-                    e.get("sentiment", ""),
-                ])
-        if rows:
-            ws.append_rows(rows, value_input_option="USER_ENTERED")
-            print(f"[L2_Logs] ✅ Logged {len(rows)} entity rows to '{SHEET_L2}'")
-    except Exception as e:
-        print(f"[L2_Logs] ❌ Logging failed: {e}")
-
+                e.get("ticker", ""),
+                e.get("name", ""),
+                e.get("industry", ""),
+                e.get("impact_type", ""),
+                e.get("direction", ""),
+                e.get("confidence", 0),
+                e.get("reason", "")[:150],
+                e.get("sentiment", ""),
+            ])
+    if rows:
+        threading.Thread(
+            target=_post_to_appscript,
+            args=({"type": "l2_logs", "rows": rows},),
+            daemon=True
+        ).start()
 
 # ─────────────────────────────────────────────
 #  POST /api/ingest
