@@ -10,8 +10,8 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 symbol = input("Enter the Symbol")
-base_url = os.getenv("GOOGLE_SHEETS_URL")
-url = f"{base_url}?symbol={symbol}"
+google_sheet = os.getenv("GOOGLE_SHEETS_URL")
+url = f"{google_sheet}?symbol={symbol}"
 response = requests.get(url)
 
 print(response.text)

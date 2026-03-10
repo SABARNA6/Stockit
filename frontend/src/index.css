@@ -10,8 +10,8 @@
   --bg-hover: #1e2d42;
 
   --text-primary: #f0f4ff;
-  --text-secondary: #8fa3c0;
-  --text-muted: #4a6080;
+  --text-secondary: #b0c4de;
+  --text-muted: #7a96b8;
 
   --green: #10d68e;
   --red: #f04060;
@@ -24,8 +24,8 @@
   --amber-bg: rgba(240, 160, 48, 0.1);
   --blue-bg: rgba(59, 130, 246, 0.1);
 
-  --border: #1e2d42;
-  --border-light: #253548;
+  --border: #253d5c;
+  --border-light: #2e4a68;
 
   --mono: "Fira Code", "JetBrains Mono", monospace;
   --sans: "Syne", system-ui, sans-serif;
@@ -48,8 +48,8 @@
   --bg-hover: #e8eef6;
 
   --text-primary: #0d1420;
-  --text-secondary: #3d5470;
-  --text-muted: #7a92b0;
+  --text-secondary: #2c4060;
+  --text-muted: #506a8a;
 
   --green: #0caa70;
   --red: #e0304e;
@@ -62,8 +62,8 @@
   --amber-bg: rgba(212, 136, 10, 0.1);
   --blue-bg: rgba(37, 99, 235, 0.1);
 
-  --border: #d0dae8;
-  --border-light: #b8c8da;
+  --border: #b8c8dc;
+  --border-light: #9eb4cc;
 
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
 }

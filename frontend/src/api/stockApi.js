@@ -1,6 +1,8 @@
 // ─── CONFIG ─────────────────────────────────────────────────────────────────
 const BASE =
-  typeof window !== "undefined" ? window.STOCK_API_BASE || "/api" : "/api";
+  typeof window !== "undefined"
+    ? window.STOCK_API_BASE || "http://localhost:10000/api"
+    : "/api";
 
 async function apiFetch(path) {
   const fullUrl = `${BASE}${path}`;

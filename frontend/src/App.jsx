@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import { useStockData } from "./hooks/useStock";
 
+import AuthPage from "./AuthPage";
+import UserMenu from "./components/UserMenu";
 import SearchBar from "./components/SearchBar";
 import StockHeader from "./components/StockHeader";
 import PriceChart from "./components/PriceChart";
@@ -9,8 +12,10 @@ import RecommendationPanel from "./components/RecommendationPanel";
 import FundamentalsGrid from "./components/FundamentalsGrid";
 import NewsFeed from "./components/NewsFeed";
 import HistoricalTable from "./components/HistoricalTable";
+import PortfolioPage from "./components/PortfolioPage1";
 
-// ─── Section ids ──────────────────────────────────────────────────────────────
+import { Sun, Moon, BarChart2, Briefcase } from "lucide-react";
+
 const SECTIONS = [
   { id: "overview", label: "Overview" },
   { id: "strategy", label: "Strategy" },
@@ -25,12 +30,10 @@ function scrollToSection(id) {
     ?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// ─── SectionTitle ─────────────────────────────────────────────────────────────
 function SectionTitle({ children }) {
   return <h2 className="section-title">{children}</h2>;
 }
 
-// ─── Error Banner ─────────────────────────────────────────────────────────────
 function ErrorBanner({ message }) {
   return (
     <div className="error-banner">
@@ -39,16 +42,9 @@ function ErrorBanner({ message }) {
   );
 }
 
-import { Sun, Moon } from "lucide-react";
-
-// ─── Theme Toggle ─────────────────────────────────────────────────────────────
 function ThemeToggle({ isLight, onToggle }) {
   return (
-    <div
-      className="theme-toggle"
-      onClick={onToggle}
-      title={isLight ? "Switch to dark" : "Switch to light"}
-    >
+    <div className="theme-toggle" onClick={onToggle}>
       <Moon size={14} color="var(--text-muted)" />
       <div className={`theme-toggle-track ${isLight ? "active" : ""}`}>
         <div className="theme-toggle-thumb" />
@@ -58,46 +54,169 @@ function ThemeToggle({ isLight, onToggle }) {
   );
 }
 
-// ─── App ─────────────────────────────────────────────────────────────────────
-export default function App() {
+function LoadingSplash() {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--bg-primary)",
+        gap: 16,
+      }}
+    >
+      <span style={{ fontSize: 32, color: "var(--green)" }}>▲</span>
+      <div className="spinner" />
+      <span
+        style={{
+          fontFamily: "var(--mono)",
+          fontSize: 11,
+          color: "var(--text-muted)",
+          letterSpacing: "0.15em",
+        }}
+      >
+        LOADING...
+      </span>
+    </div>
+  );
+}
+
+// ─── Inner App ────────────────────────────────────────────────────────────────
+function AppInner() {
+  const { user, loading } = useAuth();
   const [symbol, setSymbol] = useState("TCS");
-  const [isLight, setIsLight] = useState(false);
+  const [isLight, setIsLight] = useState(true); // ← light by default
+  const [page, setPage] = useState("market"); // "market" | "portfolio" | "auth"
 
-  const {
-    overview,
-    sparkline,
-    trends,
-    recommendation,
-    loading,
-    error,
-    reload,
-  } = useStockData(symbol);
+  const { overview, sparkline, trends, recommendation, error } =
+    useStockData(symbol);
 
-  // Apply / remove .light class on <html>
   useEffect(() => {
     document.documentElement.classList.toggle("light", isLight);
   }, [isLight]);
+  useEffect(() => {
+    if (user && page === "auth") {
+      setPage("market");
+    }
+  }, [user]);
 
-  const handleSelect = (sym) => setSymbol(sym.toUpperCase());
+  if (window.location.pathname === "/auth/callback") {
+    return <AuthCallback />;
+  }
+  if (loading) return <LoadingSplash />;
+
+  if (page === "auth") return <AuthPage onBack={() => setPage("market")} />;
+
+  if (page === "portfolio")
+    return <PortfolioPage onBack={() => setPage("market")} />;
 
   return (
     <div className="app">
-      {/* ── Top bar ── */}
       <header className="topbar">
         <div className="topbar-brand">
           <span className="brand-mark">▲</span>
           <span className="brand-name mono">MarketLens</span>
         </div>
-        <SearchBar onSelect={handleSelect} />
+
+        <SearchBar onSelect={(sym) => setSymbol(sym.toUpperCase())} />
+
+        {/* Page switcher */}
+        <div style={{ display: "flex", gap: 4 }}>
+          {[
+            {
+              id: "market",
+              label: "Market",
+              icon: <BarChart2 size={13} />,
+              color: "var(--blue)",
+              bg: "var(--blue-bg)",
+            },
+            {
+              id: "portfolio",
+              label: "Portfolio",
+              icon: <Briefcase size={13} />,
+              color: "var(--green)",
+              bg: "var(--green-bg)",
+            },
+          ].map((p) => (
+            <button
+              key={p.id}
+              onClick={() => {
+                if (p.id === "portfolio" && !user) {
+                  setPage("auth"); // nudge to sign in
+                  return;
+                }
+                setPage(p.id);
+              }}
+              title={
+                p.id === "portfolio" && !user
+                  ? "Sign in to access your Portfolio"
+                  : ""
+              }
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "6px 12px",
+                background: page === p.id ? p.bg : "transparent",
+                border: `1px solid ${page === p.id ? p.color : "var(--border)"}`,
+                borderRadius: "var(--r-sm)",
+                color:
+                  page === p.id
+                    ? p.color
+                    : p.id === "portfolio" && !user
+                      ? "var(--text-muted)"
+                      : "var(--text-muted)",
+                fontFamily: "var(--mono)",
+                fontSize: 11,
+                cursor: "pointer",
+                letterSpacing: "0.08em",
+                transition: "all .15s",
+                opacity: p.id === "portfolio" && !user ? 0.5 : 1, // dimmed when locked
+              }}
+            >
+              {p.icon} {p.label}
+              {p.id === "portfolio" && !user && (
+                <span style={{ fontSize: 10 }}>🔒</span>
+              )}
+            </button>
+          ))}
+        </div>
+
         <div className="topbar-right mono">
           {overview?.lastUpdated
             ? `Updated ${new Date(overview.lastUpdated).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`
             : "Live · NSE"}
         </div>
+
         <ThemeToggle isLight={isLight} onToggle={() => setIsLight((v) => !v)} />
+
+        {/* ── Auth: show UserMenu if logged in, Sign In button if not ── */}
+        {user ? (
+          <UserMenu onNavigatePortfolio={() => setPage("portfolio")} />
+        ) : (
+          <button
+            onClick={() => setPage("auth")}
+            style={{
+              padding: "6px 14px",
+              background: "var(--green-bg)",
+              border: "1px solid var(--green)",
+              borderRadius: "var(--r-sm)",
+              color: "var(--green)",
+              fontFamily: "var(--mono)",
+              fontSize: 11,
+              cursor: "pointer",
+              letterSpacing: "0.08em",
+              transition: "all .15s",
+              flexShrink: 0,
+            }}
+          >
+            Sign In
+          </button>
+        )}
       </header>
 
-      {/* ── Section nav ── */}
       <nav className="section-nav">
         {SECTIONS.map((s) => (
           <button
@@ -110,21 +229,17 @@ export default function App() {
         ))}
       </nav>
 
-      {/* ── Error ── */}
       {error && <ErrorBanner message={error} />}
 
-      {/* ── Content ── */}
       <main className="main-content">
-        {/* Stock Header */}
         <section id="sec-overview" className="content-section">
           <StockHeader
             overview={overview}
             sparkline={sparkline}
-            onWatchlist={() => alert(`${symbol} added to watchlist`)}
+            onWatchlist={() => setPage("auth")}
           />
         </section>
 
-        {/* Market Overview: Chart + Signals + Recommendation */}
         <section className="content-section two-col-layout">
           <div className="col-main">
             <SectionTitle>Price Chart</SectionTitle>
@@ -143,30 +258,35 @@ export default function App() {
           </div>
         </section>
 
-        {/* Fundamentals */}
         <section id="sec-fundamentals" className="content-section">
           <SectionTitle>Fundamental Analysis</SectionTitle>
           <FundamentalsGrid symbol={symbol} />
         </section>
 
-        {/* News */}
         <section id="sec-news" className="content-section">
           <SectionTitle>News & Sentiment</SectionTitle>
           <NewsFeed symbol={symbol} />
         </section>
 
-        {/* Historical */}
         <section id="sec-historical" className="content-section">
           <SectionTitle>Historical Data</SectionTitle>
           <HistoricalTable symbol={symbol} />
         </section>
       </main>
 
-      {/* ── Footer ── */}
       <footer className="app-footer mono">
         For informational purposes only. Not financial advice. Data via NSE /
         yfinance.
       </footer>
     </div>
+  );
+}
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
   );
 }

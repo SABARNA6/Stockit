@@ -1,0 +1,322 @@
+# Style & Theme Documentation
+
+## Overview
+
+This is a comprehensive dark-first design system for a **stock market / financial dashboard** application. It uses CSS custom properties extensively for theming, and is built around three font families with a responsive grid layout.
+
+---
+
+## Design Tokens (CSS Variables)
+
+### Color Palette — Dark Theme (default)
+
+| Variable | Value | Purpose |
+|---|---|---|
+| `--bg-primary` | `#080c14` | Page background |
+| `--bg-section` | `#0d1420` | Nav bars, section backgrounds |
+| `--bg-card` | `#111827` | Card surfaces |
+| `--bg-elevated` | `#172033` | Raised elements, inputs |
+| `--bg-hover` | `#1e2d42` | Hover states |
+| `--text-primary` | `#f0f4ff` | Headings, main content |
+| `--text-secondary` | `#8fa3c0` | Body text, labels |
+| `--text-muted` | `#4a6080` | Placeholders, metadata |
+| `--green` | `#10d68e` | Positive/gain indicators |
+| `--red` | `#f04060` | Negative/loss indicators |
+| `--amber` | `#f0a030` | Warnings, volume spikes |
+| `--blue` | `#3b82f6` | Interactive elements, links |
+| `--purple` | `#8b5cf6` | Confidence bars, export buttons |
+| `--border` | `#1e2d42` | Standard dividers |
+| `--border-light` | `#253548` | Subtle borders |
+
+Each semantic color also has a `--{color}-bg` variant (e.g. `--green-bg: rgba(16, 214, 142, .1)`) used for tinted badge backgrounds.
+
+### Color Palette — Light Theme (`:root.light`)
+
+The light theme overrides all the above variables. Key differences: backgrounds invert to light grays/whites, text goes dark, and the semantic colors are slightly muted (e.g. green shifts from `#10d68e` → `#0caa70`).
+
+### Typography
+
+| Variable | Value |
+|---|---|
+| `--mono` | `"Fira Code"`, JetBrains Mono, monospace |
+| `--sans` | `"Syne"`, system-ui, sans-serif |
+| `--serif` | `"Lora"`, Georgia, serif |
+
+Fonts are loaded from Google Fonts. Usage convention:
+- **`--sans`** — UI labels, navigation, headings
+- **`--mono`** — Data values, tickers, timestamps, codes
+- **`--serif`** — Price displays, news titles, italic card headers
+
+### Spacing & Shape
+
+| Variable | Value |
+|---|---|
+| `--r-sm` | `4px` |
+| `--r-md` | `8px` |
+| `--r-lg` | `12px` |
+| `--r-xl` | `16px` |
+| `--shadow` | `0 4px 24px rgba(0,0,0,.4)` |
+
+---
+
+## Utility Classes
+
+| Class | Effect |
+|---|---|
+| `.mono` | Applies `--mono` font family |
+| `.muted` | Sets color to `--text-muted` |
+| `.pos` | Forces green color (`!important`) |
+| `.neg` | Forces red color (`!important`) |
+| `.warn` | Forces amber color (`!important`) |
+| `.fw` | `font-weight: 600` |
+
+### Skeleton / Loading Shimmer
+
+```css
+.skel          /* Base shimmer animation block */
+.skel-short    /* 40% width */
+.skel-med      /* 65% width */
+.skel-wide     /* 100% width */
+.skel-full     /* 100% width + height */
+```
+
+All use a left-to-right gradient shimmer driven by the `shimmer` keyframe animation at 1.4s.
+
+---
+
+## Layout System
+
+### Application Shell
+
+```
+.app               Flex column, full viewport height
+  .topbar          Sticky top bar, 56px, blur backdrop
+  .section-nav     Horizontal scrollable nav strip
+  .main-content    Max-width 1440px, centered, padded
+  .app-footer      Bottom bar
+```
+
+### Two-Column Layout
+
+```css
+.two-col-layout    /* grid: 1fr 360px */
+  .col-main        /* stacked flex column */
+  .col-side        /* sticky at top: 120px */
+```
+
+Collapses to single column below **1200px**.
+
+---
+
+## Component Reference
+
+### Topbar (`.topbar`)
+
+Sticky header with blur backdrop. Contains:
+- `.topbar-brand` — logo mark + brand name
+- `.search-wrap` — search input with dropdown
+- `.theme-toggle` — light/dark switch
+- `.topbar-right` — timestamp/metadata label
+
+### Theme Toggle
+
+```html
+<div class="theme-toggle">
+  <div class="theme-toggle-track [active]">
+    <div class="theme-toggle-thumb"></div>
+  </div>
+</div>
+```
+
+Add `.active` to the track to show the "on" (light mode) state. The thumb slides 18px right and turns blue.
+
+### Search
+
+```html
+<div class="search-wrap">
+  <div class="search-box">
+    <span class="search-icon">…</span>
+    <input class="search-input" />
+    <div class="search-spinner"></div>  <!-- shown while loading -->
+  </div>
+  <div class="search-dropdown">
+    <button class="search-result-item">
+      <span class="sri-symbol">AAPL</span>
+      <span class="sri-title">Apple Inc.</span>
+      <span class="sri-sentiment positive|negative|neutral">BUY</span>
+    </button>
+  </div>
+</div>
+```
+
+### Stock Header (`.stock-header`)
+
+Animated card (`fadeUp` keyframe) containing:
+
+| Sub-component | Purpose |
+|---|---|
+| `.stock-logo` | Colored avatar with ticker initials |
+| `.stock-name` | Company name (22px, `--sans`) |
+| `.badge` / `.badge-sector` | Exchange/sector pills |
+| `.watchlist-btn` | Add-to-watchlist action |
+| `.current-price` | Large serif price display (52px) |
+| `.change-badge.pos/.neg` | Delta pill with arrow icon |
+| `.metric-chip` | Individual stat tile (volume, P/E, etc.) |
+
+### Signals Strip (`.signals-strip`)
+
+A 3-column grid of signal cells, each containing a label, value, subtitle, and a colored progress bar.
+
+```html
+<div class="signals-strip">
+  <div class="signal-cell">
+    <div class="signal-label">RSI</div>
+    <div class="signal-value">62.4</div>
+    <div class="signal-sub">Slightly overbought</div>
+    <div class="signal-bar-track">
+      <div class="signal-bar-fill" style="width:62%;background:var(--amber)"></div>
+    </div>
+  </div>
+</div>
+```
+
+Collapses to a single column on mobile.
+
+### Recommendation Panel (`.rec-panel`)
+
+```html
+<div class="rec-panel">
+  <div class="rec-header-row">
+    <div class="verdict-badge pos|neg|warn">BUY</div>
+    <div class="rec-meta">…</div>
+  </div>
+  <!-- Confidence bar -->
+  <div class="conf-track">
+    <div class="conf-fill" style="width:78%"></div>  <!-- purple gradient -->
+  </div>
+  <!-- Score rows -->
+  <div class="score-rows">
+    <div class="score-row">…</div>
+  </div>
+  <!-- Reason tabs -->
+  <div class="reason-tabs">
+    <button class="rtab-btn active">Bulls</button>
+    <button class="rtab-btn">Bears</button>
+    <button class="rtab-btn">Risks</button>
+  </div>
+  <ul class="reason-list">
+    <li><span class="reason-bullet">▲</span> Reason text</li>
+  </ul>
+</div>
+```
+
+### Entry Ladder (`.entry-ladder`)
+
+A visual price range track:
+- `.ladder-track` — the container bar
+- `.ladder-zone` — green shaded entry zone
+- `.ladder-marker` — vertical price markers with label + value
+
+### Fundamentals Grid (`.fund-grid`)
+
+4-column responsive grid (→ 2-col at 1200px, → 1-col on mobile). Each `.fund-card` has an italic serif title header and `.fund-row` key/value pairs.
+
+### News Section
+
+```html
+<!-- Filter bar -->
+<div class="news-filter-bar">
+  <button class="nfilt-btn active">All</button>
+  <button class="nfilt-btn">Positive</button>
+  <button class="nfilt-btn">Negative</button>
+</div>
+
+<!-- 2-column grid -->
+<div class="news-grid">
+  <div class="news-card">
+    <div class="news-tags">
+      <span class="ntag ntag-pos">Earnings</span>
+      <span class="ntag ntag-hot">Hot</span>
+    </div>
+    <div class="news-title">…</div>
+    <div class="news-meta">Source · Time</div>
+    <div class="news-summary">…</div>
+    <a class="news-link">Read more →</a>
+  </div>
+</div>
+```
+
+Tag variants: `.ntag-pos` (green), `.ntag-neg` (red), `.ntag-neu` (gray), `.ntag-hot` (amber).
+
+### Historical Data Table (`.hist-section`)
+
+```html
+<div class="hist-section">
+  <div class="hist-controls">
+    <div class="period-selector">
+      <button class="period-btn active">1M</button>
+      …
+    </div>
+    <button class="export-btn">EXPORT CSV</button>
+  </div>
+  <div class="table-wrap">
+    <table class="hist-table">
+      <tr class="row-spike">…</tr>  <!-- amber-tinted high-volume rows -->
+    </table>
+  </div>
+  <div class="pagination">
+    <button class="page-btn active">1</button>
+    …
+  </div>
+</div>
+```
+
+`.row-spike` highlights anomalous volume rows in amber. `.vol-spike-badge` adds an inline `⚡` marker.
+
+### Sentiment Bar
+
+```html
+<div class="sentiment-bar">
+  <div class="sb-pos" style="width:55%"></div>
+  <div class="sb-neu" style="width:25%"></div>
+  <div class="sb-neg" style="width:20%"></div>
+</div>
+<div class="sentiment-legend">
+  <span class="sleg-item"><span class="sleg-dot pos"></span>Bullish 55%</span>
+  …
+</div>
+```
+
+---
+
+## Animations
+
+| Name | Used on | Description |
+|---|---|---|
+| `shimmer` | `.skel` | Horizontal gradient sweep for loading states |
+| `spin` | `.search-spinner`, `.spinner` | Continuous 360° rotation |
+| `fadeUp` | `.stock-header` | Fade + 12px upward translate on mount |
+
+---
+
+## Responsive Breakpoints
+
+| Breakpoint | Changes |
+|---|---|
+| `≤ 1200px` | Two-col → single col; fund grid → 2 cols; sidebar unsticks |
+| `≤ 768px` | Padding tightens; brand name hidden; signals collapse to 1 col; news/fund grids → 1 col; history controls stack |
+| `≤ 420px` | Price/header sizes reduce further; full-width fund grid; price row stacks vertically |
+
+---
+
+## State Modifiers Summary
+
+| Modifier | Element | Effect |
+|---|---|---|
+| `.active` | `.tf-btn`, `.snav-btn`, `.nfilt-btn`, etc. | Active/selected highlight |
+| `.active` | `.theme-toggle-track` | Toggle switched on |
+| `.pos` / `.neg` / `.warn` | `.change-badge`, `.verdict-badge` | Semantic color theming |
+| `.positive` / `.negative` / `.neutral` | `.sri-sentiment` | Search result sentiment pill |
+| `:root.light` | Root element | Full light theme override |
+| `.row-spike` | `tr` in hist-table | Volume spike row highlight |
+| `:disabled` | `.export-btn`, `.page-btn` | 40% opacity, no pointer |
