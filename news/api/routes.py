@@ -1,84 +1,253 @@
 """
 api/routes.py
-Flask routes for News Impact Pipeline
-Apps Script POSTs to /api/ingest → Layer 1 processes → returns profiles
+Flask routes — Apps Script → Layer 1 → Layer 2 → Logs to Google Sheets
 """
 
 from flask import Flask, request, jsonify
 from datetime import datetime
-import sys, os
+import sys, os, json, threading
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from layers.layer1_content import build_unified_profile
+from layers.layer1_content     import build_unified_profile
+from layers.layer2_propagation import run_layer2, load_knowledge_graph
 
 app = Flask(__name__)
+
+# ─────────────────────────────────────────────
+#  STATE
+# ─────────────────────────────────────────────
+_spreadsheet = None
+_kg_loaded   = False
+
+# ── Sheet tab names ───────────────────────────
+SHEET_NSE    = "Nifty50"    # ← your NSE stocks tab name
+SHEET_L1     = "L1_Logs"
+SHEET_L2     = "L2_Logs"
+
+
+# ─────────────────────────────────────────────
+#  GOOGLE SHEETS CONNECTION
+#  Render env vars needed:
+#    GOOGLE_CREDS_JSON  = contents of service_account.json
+#    SPREADSHEET_ID     = your Google Sheet ID
+# ─────────────────────────────────────────────
+def _get_spreadsheet():
+    global _spreadsheet
+    if _spreadsheet:
+        return _spreadsheet
+    try:
+        import gspread
+        from oauth2client.service_account import ServiceAccountCredentials
+
+        creds_json = os.environ.get("GOOGLE_CREDS_JSON")
+        sheet_id   = os.environ.get("SPREADSHEET_ID")
+
+        if not creds_json or not sheet_id:
+            print("[SHEETS] ❌ Missing GOOGLE_CREDS_JSON or SPREADSHEET_ID in env vars")
+            return None
+
+        scope  = ["https://spreadsheets.google.com/feeds",
+                  "https://www.googleapis.com/auth/drive"]
+        creds  = ServiceAccountCredentials.from_json_keyfile_dict(
+                     json.loads(creds_json), scope)
+        client = gspread.authorize(creds)
+        _spreadsheet = client.open_by_key(sheet_id)
+        print("[SHEETS] ✅ Connected to Google Spreadsheet")
+        return _spreadsheet
+
+    except Exception as e:
+        print(f"[SHEETS] ❌ Connection failed: {e}")
+        return None
+
+
+def _get_or_create_tab(name: str, headers: list):
+    """Return worksheet by name, creating it with headers if missing."""
+    import gspread
+    ss = _get_spreadsheet()
+    if not ss:
+        return None
+    try:
+        return ss.worksheet(name)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = ss.add_worksheet(title=name, rows=10000, cols=len(headers))
+        ws.append_row(headers)
+        # Bold + colour the header row
+        ws.format("1:1", {
+            "textFormat":      {"bold": True, "foregroundColor": {"red": 1, "green": 1, "blue": 1}},
+            "backgroundColor": {"red": 0.1, "green": 0.45, "blue": 0.9}
+        })
+        print(f"[SHEETS] ✅ Created new tab: '{name}'")
+        return ws
+
+
+# ─────────────────────────────────────────────
+#  LOAD NSE STOCKS → Layer 2 Knowledge Graph
+# ─────────────────────────────────────────────
+def _load_nse_stocks():
+    global _kg_loaded
+    if _kg_loaded:
+        return
+    ss = _get_spreadsheet()
+    if not ss:
+        print("[KG] ❌ Cannot load NSE stocks — no sheet connection")
+        return
+    try:
+        ws     = ss.worksheet(SHEET_NSE)
+        stocks = ws.get_all_records()
+        load_knowledge_graph(stocks)
+        _kg_loaded = True
+    except Exception as e:
+        print(f"[KG] ❌ Failed to load NSE stocks from '{SHEET_NSE}': {e}")
+
+
+# ─────────────────────────────────────────────
+#  LOG LAYER 1  →  L1_Logs sheet
+#  One row per financially relevant article
+# ─────────────────────────────────────────────
+def _log_l1(profiles: list):
+    headers = [
+        "timestamp", "news_id", "title",
+        "tickers_found", "event_type", "themes",
+        "sentiment", "urgency_score", "relevance_score", "source"
+    ]
+    ws = _get_or_create_tab(SHEET_L1, headers)
+    if not ws or not profiles:
+        return
+    try:
+        ts   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        rows = [
+            [
+                ts,
+                p.get("id", ""),
+                p.get("title", "")[:100],
+                ", ".join(e["ticker"] for e in p.get("entities", [])) or "—",
+                p.get("event", {}).get("event_type", ""),
+                ", ".join(p.get("event", {}).get("themes", [])) or "—",
+                p.get("sentiment", {}).get("label", ""),
+                p.get("sentiment", {}).get("urgency_score", 0),
+                p.get("relevance_score", 0),
+                p.get("source", ""),
+            ]
+            for p in profiles
+        ]
+        ws.append_rows(rows, value_input_option="USER_ENTERED")
+        print(f"[L1_Logs] ✅ Logged {len(rows)} rows to '{SHEET_L1}'")
+    except Exception as e:
+        print(f"[L1_Logs] ❌ Logging failed: {e}")
+
+
+# ─────────────────────────────────────────────
+#  LOG LAYER 2  →  L2_Logs sheet
+#  One row per affected entity per article
+# ─────────────────────────────────────────────
+def _log_l2(profiles: list):
+    headers = [
+        "timestamp", "news_id", "news_title",
+        "ticker", "company", "industry",
+        "impact_type", "direction", "confidence",
+        "reason", "sentiment"
+    ]
+    ws = _get_or_create_tab(SHEET_L2, headers)
+    if not ws or not profiles:
+        return
+    try:
+        ts   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        rows = []
+        for p in profiles:
+            for e in p.get("affected_entities", []):
+                rows.append([
+                    ts,
+                    p.get("id", ""),
+                    p.get("title", "")[:100],
+                    e.get("ticker", ""),
+                    e.get("name", ""),
+                    e.get("industry", ""),
+                    e.get("impact_type", ""),
+                    e.get("direction", ""),
+                    e.get("confidence", 0),
+                    e.get("reason", "")[:150],
+                    e.get("sentiment", ""),
+                ])
+        if rows:
+            ws.append_rows(rows, value_input_option="USER_ENTERED")
+            print(f"[L2_Logs] ✅ Logged {len(rows)} entity rows to '{SHEET_L2}'")
+    except Exception as e:
+        print(f"[L2_Logs] ❌ Logging failed: {e}")
 
 
 # ─────────────────────────────────────────────
 #  POST /api/ingest
 #  Called by Apps Script after every RSS fetch
-#  Body: { "articles": [ {id, title, link, ...}, ... ] }
 # ─────────────────────────────────────────────
 @app.route("/api/ingest", methods=["POST"])
 def ingest():
-    body = request.get_json(force=True)
+    # Load NSE knowledge graph once on first request
+    _load_nse_stocks()
 
+    body = request.get_json(force=True)
     if not body or "articles" not in body:
         return jsonify({"error": "Expected JSON with 'articles' key"}), 400
 
-    articles = body["articles"]
-    if not isinstance(articles, list) or len(articles) == 0:
-        return jsonify({"status": "ok", "message": "No articles to process", "count": 0})
+    articles = body.get("articles", [])
+    if not articles:
+        return jsonify({"status": "ok", "message": "No articles received", "count": 0})
 
-    profiles   = []
-    irrelevant = []
-
+    # ── Layer 1 : NLP ────────────────────────
+    l1_profiles = []
     for article in articles:
         try:
             profile = build_unified_profile(article)
-
-            # Skip duplicates caught by novelty check
             if profile["novelty"]["is_duplicate"]:
                 continue
-
             if profile["is_financially_relevant"]:
-                profiles.append(profile)
-            else:
-                irrelevant.append(profile["id"])
-
+                l1_profiles.append(profile)
         except Exception as e:
-            print(f"[ERROR] Failed to process article {article.get('id')}: {e}")
-            continue
+            print(f"[ERROR] Layer1 failed for article {article.get('id')}: {e}")
 
-    # Sort by relevance score — most important first
-    profiles.sort(key=lambda x: x["relevance_score"], reverse=True)
+    l1_profiles.sort(key=lambda x: x["relevance_score"], reverse=True)
 
-    print(f"[INGEST] {datetime.now()} | Received: {len(articles)} | "
-          f"Relevant: {len(profiles)} | Irrelevant: {len(irrelevant)}")
+    # ── Log L1 in background thread (non-blocking) ──
+    threading.Thread(target=_log_l1, args=(l1_profiles,), daemon=True).start()
+
+    # ── Layer 2 : Gemini impact propagation ──
+    l2_profiles = run_layer2(l1_profiles)
+
+    # ── Log L2 in background thread (non-blocking) ──
+    threading.Thread(target=_log_l2, args=(l2_profiles,), daemon=True).start()
+
+    print(f"[INGEST] {datetime.now().strftime('%H:%M:%S')} | "
+          f"In: {len(articles)} | L1: {len(l1_profiles)} | L2: {len(l2_profiles)}")
 
     return jsonify({
-        "status":    "ok",
-        "received":  len(articles),
-        "processed": len(profiles),
-        "skipped":   len(irrelevant),
-        "profiles":  profiles        # Layer 2 will consume this next
+        "status":          "ok",
+        "received":        len(articles),
+        "layer1_relevant": len(l1_profiles),
+        "layer2_enriched": len(l2_profiles),
+        "profiles":        l2_profiles      # → Layer 3 next
     })
 
 
 # ─────────────────────────────────────────────
-#  GET /api/health  —  quick status check
+#  GET /api/health
 # ─────────────────────────────────────────────
 @app.route("/api/health", methods=["GET"])
 def health():
+    ss_ok = _get_spreadsheet() is not None
     return jsonify({
-        "status":    "running",
-        "timestamp": datetime.now().isoformat(),
-        "layers":    {"layer1": "active", "layer2": "coming soon",
-                      "layer3": "coming soon", "layer4": "coming soon"}
+        "status":       "running",
+        "timestamp":    datetime.now().isoformat(),
+        "sheets_ok":    ss_ok,
+        "kg_loaded":    _kg_loaded,
+        "layers": {
+            "layer1": "active",
+            "layer2": "active (Gemini)",
+            "layer3": "coming soon",
+            "layer4": "coming soon"
+        }
     })
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    print(f"🚀 Flask API running on http://0.0.0.0:{port}")
+    print(f"🚀 Flask API on http://0.0.0.0:{port}")
     app.run(host="0.0.0.0", debug=False, port=port)
