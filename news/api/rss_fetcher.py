@@ -12,7 +12,7 @@ import hashlib
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
-from db.supabase_logger import _insert, _get_headers, _url
+from database.supabase_logger import _insert, _get_headers, _url
 
 
 # ─────────────────────────────────────────────

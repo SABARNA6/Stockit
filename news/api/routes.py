@@ -12,11 +12,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from layers.layer1_content     import build_unified_profile
 from layers.layer2_propagation import run_layer2, load_knowledge_graph
 from layers.layer3_prediction  import run_layer3
-from db.supabase_logger        import (
+from database.supabase_logger        import (
     check_connection, save_nse_stocks,
-    log_l1, log_l2, log_l3
+    log_l1
 )
 from api.rss_fetcher import fetch_all_feeds
+from layers.layer4_reasoning import run_layer4
 
 app = Flask(__name__)
 
@@ -28,35 +29,52 @@ _nse_stocks = []
 #  STARTUP — load stocks from Supabase
 # ─────────────────────────────────────────────
 def _load_stocks_from_supabase():
-    """Load NSE stocks into Layer 2 knowledge graph at startup."""
+    """Load NSE stocks into Layer 2 knowledge graph."""
     global _kg_loaded, _nse_stocks
     try:
         import requests as req
-        from db.supabase_logger import _get_headers, _url
-        response = req.get(
-            _url("nse_stocks") + "?select=ticker,company_name,industry&limit=2000",
-            headers=_get_headers(),
-            timeout=15
-        )
-        if response.status_code == 200:
-            stocks = response.json()
-            if stocks:
-                # Normalize to expected format
-                normalized = [{
-                    "Symbol":       s["ticker"],
-                    "Company Name": s["company_name"],
-                    "Industry":     s["industry"],
-                } for s in stocks]
-                load_knowledge_graph(normalized)
-                _kg_loaded  = True
-                _nse_stocks = normalized
-                print(f"[KG] ✅ Loaded {len(stocks)} stocks from Supabase at startup")
-            else:
-                print("[KG] ⚠️ No stocks in Supabase yet — run /api/load-stocks first")
+        from database.supabase_logger import _get_headers, _url
+
+        all_stocks = []
+        page_size  = 1000
+        offset     = 0
+
+        # Paginate — Supabase default limit is 1000
+        while True:
+            url      = _url("nse_stocks") + f"?select=ticker,company_name,industry&limit={page_size}&offset={offset}"
+            response = req.get(url, headers=_get_headers(), timeout=15)
+
+            print(f"[KG] Fetching stocks offset={offset} → HTTP {response.status_code}")
+
+            if response.status_code != 200:
+                print(f"[KG] ❌ Failed: {response.text[:200]}")
+                break
+
+            batch = response.json()
+            if not batch:
+                break
+
+            all_stocks.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
+
+        if all_stocks:
+            normalized = [{
+                "Symbol":       s["ticker"],
+                "Company Name": s.get("company_name", ""),
+                "Industry":     s.get("industry", ""),
+            } for s in all_stocks]
+            load_knowledge_graph(normalized)
+            _kg_loaded  = True
+            _nse_stocks = normalized
+            print(f"[KG] ✅ Loaded {len(all_stocks)} stocks from Supabase")
         else:
-            print(f"[KG] ❌ Failed to load stocks: {response.status_code}")
+            print("[KG] ⚠️ No stocks found in nse_stocks table")
     except Exception as e:
-        print(f"[KG] ❌ Startup stock load failed: {e}")
+        import traceback
+        print(f"[KG] ❌ Failed: {e}")
+        print(traceback.format_exc())
 
 
 # ─────────────────────────────────────────────
@@ -81,21 +99,23 @@ def _run_pipeline(articles: list) -> dict:
             print(f"[ERROR] L1 failed for {article.get('id')}: {e}")
 
     l1_profiles.sort(key=lambda x: x["relevance_score"], reverse=True)
-    threading.Thread(target=log_l1, args=(l1_profiles,), daemon=True).start()
+    log_l1(l1_profiles)       # ← synchronous, no threading
 
     # ── Layer 2 ──────────────────────────────
     l2_profiles = run_layer2(l1_profiles)
-    threading.Thread(target=log_l2, args=(l2_profiles,), daemon=True).start()
-
     # ── Layer 3 ──────────────────────────────
     l3_profiles = run_layer3(l2_profiles)
-    threading.Thread(target=log_l3, args=(l3_profiles,), daemon=True).start()
+    # L2 and L3 log themselves per batch/profile
+
+    # ── Layer 4 ──────────────────────────────
+    l4_profiles = run_layer4(l3_profiles)
 
     return {
         "layer1_relevant":  len(l1_profiles),
         "layer2_enriched":  len(l2_profiles),
         "layer3_predicted": len(l3_profiles),
-        "profiles":         l3_profiles,
+        "layer4_reasoned":  len(l4_profiles),
+        "profiles":         l4_profiles,
     }
 
 
@@ -189,7 +209,7 @@ def load_stocks():
 @app.route("/api/add-feed", methods=["POST"])
 def add_feed():
     import requests as req
-    from db.supabase_logger import _get_headers, _url
+    from database.supabase_logger import _get_headers, _url
     body = request.get_json(force=True)
     name = body.get("name", "")
     url  = body.get("url",  "")
@@ -237,11 +257,113 @@ def health():
 
 
 # ─────────────────────────────────────────────
-#  STARTUP
+#  STARTUP — lazy load on first request
+#  Avoids env var timing issues on Render
 # ─────────────────────────────────────────────
-with app.app_context():
-    check_connection()
-    _load_stocks_from_supabase()
+@app.before_request
+def startup():
+    global _kg_loaded
+    # Skip heavy startup for lightweight endpoints
+    if request.path in ("/api/health",) or request.path.startswith("/api/stock"):
+        return
+    if not _kg_loaded:
+        check_connection()
+        _load_stocks_from_supabase()
+
+
+
+
+# ─────────────────────────────────────────────
+#  GET /api/stock/<ticker>
+#  Returns latest news + predictions for a stock
+# ─────────────────────────────────────────────
+@app.route("/api/stock/<ticker>", methods=["GET"])
+def get_stock(ticker: str):
+    import requests as req
+    from database.supabase_logger import _get_headers, _url
+
+    ticker  = ticker.upper().strip()
+    hours   = int(request.args.get("hours", 24))
+    limit   = int(request.args.get("limit", 20))
+
+    since   = (datetime.now() - __import__('datetime').timedelta(hours=hours)).isoformat()
+
+    l4_resp = req.get(
+        _url("l4_logs") +
+        f"?ticker=eq.{ticker}"
+        f"&created_at=gte.{since}"
+        f"&order=created_at.desc"
+        f"&limit={limit}"
+        f"&select=*",
+        headers=_get_headers(),
+        timeout=10
+    )
+
+    l2_resp = req.get(
+        _url("l2_logs") +
+        f"?ticker=eq.{ticker}"
+        f"&created_at=gte.{since}"
+        f"&order=created_at.desc"
+        f"&limit={limit}"
+        f"&select=news_id,news_title,impact_type,direction,confidence,reason,created_at",
+        headers=_get_headers(),
+        timeout=10
+    )
+
+    l4_rows = l4_resp.json() if l4_resp.status_code == 200 else []
+    l2_rows = l2_resp.json() if l2_resp.status_code == 200 else []
+
+    if not l4_rows and not l2_rows:
+        return jsonify({
+            "ticker":  ticker,
+            "message": f"No data found for {ticker} in last {hours} hours",
+            "signals": []
+        })
+
+    l2_map = {str(r["news_id"]): r for r in l2_rows}
+
+    merged = []
+    for row in l4_rows:
+        news_id = str(row.get("news_id", ""))
+        l2      = l2_map.get(news_id, {})
+        merged.append({
+            "news_id":           row.get("news_id"),
+            "news_title":        row.get("news_title"),
+            "created_at":        row.get("created_at"),
+            "impact_type":       l2.get("impact_type", row.get("impact_type")),
+            "impact_reason":     l2.get("reason", ""),
+            "alert_priority":    row.get("alert_priority"),
+            "direction":         row.get("direction"),
+            "move_estimate_pct": row.get("move_estimate_pct"),
+            "move_range":        {"low": row.get("move_range_low"), "high": row.get("move_range_high")},
+            "confidence":        row.get("confidence"),
+            "time_horizon":      row.get("time_horizon"),
+            "current_price":     row.get("current_price"),
+            "trend_8d_pct":      row.get("trend_8d_pct"),
+            "volatility":        row.get("volatility"),
+            "l4_rationale":      row.get("l4_rationale"),
+            "l4_flag":           row.get("l4_flag"),
+            "reasoning_summary": row.get("reasoning_summary"),
+        })
+
+    immediate = [r for r in merged if r["alert_priority"] == "IMMEDIATE"]
+    watch     = [r for r in merged if r["alert_priority"] == "WATCH"]
+    bullish   = [r for r in merged if r["direction"] == "UP"]
+    bearish   = [r for r in merged if r["direction"] == "DOWN"]
+
+    return jsonify({
+        "ticker":  ticker,
+        "hours":   hours,
+        "summary": {
+            "total_signals":   len(merged),
+            "immediate":       len(immediate),
+            "watch":           len(watch),
+            "bullish_signals": len(bullish),
+            "bearish_signals": len(bearish),
+            "avg_confidence":  round(sum(r["confidence"] or 0 for r in merged) / len(merged), 2) if merged else 0,
+        },
+        "signals": merged
+    })
 
 
 if __name__ == "__main__":

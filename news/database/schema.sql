@@ -125,6 +125,35 @@ CREATE INDEX IF NOT EXISTS idx_l3_logs_alert_priority ON l3_logs(alert_priority)
 CREATE INDEX IF NOT EXISTS idx_l3_logs_direction      ON l3_logs(direction);
 CREATE INDEX IF NOT EXISTS idx_l3_logs_created_at     ON l3_logs(created_at DESC);
 
+-- Run in Supabase → SQL Editor
+
+CREATE TABLE IF NOT EXISTS l4_logs (
+  id                 SERIAL PRIMARY KEY,
+  news_id            BIGINT,
+  news_title         TEXT,
+  ticker             TEXT,
+  company            TEXT,
+  impact_type        TEXT,
+  direction          TEXT,
+  move_estimate_pct  FLOAT,
+  move_range_low     FLOAT,
+  move_range_high    FLOAT,
+  confidence         FLOAT,
+  time_horizon       TEXT,
+  current_price      FLOAT,
+  alert_priority     TEXT,
+  l4_rationale       TEXT,
+  l4_flag            TEXT,
+  l4_refined_move    FLOAT,
+  reasoning_summary  TEXT,
+  created_at         TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_l4_logs_ticker         ON l4_logs(ticker);
+CREATE INDEX IF NOT EXISTS idx_l4_logs_alert_priority ON l4_logs(alert_priority);
+CREATE INDEX IF NOT EXISTS idx_l4_logs_news_id        ON l4_logs(news_id);
+CREATE INDEX IF NOT EXISTS idx_l4_logs_created_at     ON l4_logs(created_at DESC);
+
 -- ── 8. Pipeline Progress ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS pipeline_progress (
   id                    SERIAL PRIMARY KEY,

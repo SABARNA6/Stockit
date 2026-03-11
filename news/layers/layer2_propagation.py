@@ -2,16 +2,25 @@
 =====================================================================
   LAYER 2 : IMPACT PROPAGATION
   LLM      : OpenRouter (Llama 3.3 70B) → Gemini fallback
-  Input    : Layer 1 profiles (batches of 10)
+  Input    : Layer 1 profiles (batches of 5)
   Output   : Affected entities with impact type + confidence + reason
+
+  Features:
+  - Logs to Supabase after EACH batch (not all at end)
+  - Skips articles already in l2_logs (no re-processing)
+  - MAX_BATCHES limit to control API usage
 =====================================================================
 """
 
+import os
 import time
+import requests
 from datetime import datetime
 from layers.llm_client import call_llm
 
-BATCH_SIZE = 5
+BATCH_SIZE  = 5
+MAX_BATCHES = None   # set to e.g. 5 to process only first 5 batches
+                     # set to None to process all
 
 # ─────────────────────────────────────────────
 #  NSE stock cache
@@ -23,9 +32,9 @@ _sector_index:dict = {}
 
 def load_knowledge_graph(stocks: list) -> None:
     global _nse_stocks, _nse_lookup, _sector_index
-    _nse_stocks    = []
-    _nse_lookup    = {}
-    _sector_index  = {}
+    _nse_stocks   = []
+    _nse_lookup   = {}
+    _sector_index = {}
 
     for row in stocks:
         ticker   = str(row.get("Symbol",       row.get("ticker", ""))).strip().upper()
@@ -42,8 +51,81 @@ def load_knowledge_graph(stocks: list) -> None:
     print(f"[KG] Loaded {len(_nse_stocks)} stocks across {len(_sector_index)} sectors ✅")
 
 
+# ─────────────────────────────────────────────
+#  CHECK ALREADY PROCESSED (skip duplicates)
+# ─────────────────────────────────────────────
+def _get_already_processed_ids() -> set:
+    """
+    Fetch news_ids already in l2_logs from Supabase.
+    Skips re-processing articles that already have L2 results.
+    """
+    try:
+        from database.supabase_logger import _get_headers, _url
+        response = requests.get(
+            _url("l2_logs") + "?select=news_id&limit=5000",
+            headers=_get_headers(),
+            timeout=10
+        )
+        if response.status_code == 200:
+            rows = response.json()
+            ids  = {str(r["news_id"]) for r in rows if r.get("news_id")}
+            print(f"[Layer2] Found {len(ids)} already-processed article IDs in l2_logs")
+            return ids
+        else:
+            print(f"[Layer2] ⚠️ Could not fetch processed IDs: {response.status_code}")
+            return set()
+    except Exception as e:
+        print(f"[Layer2] ⚠️ Skip-check failed: {e}")
+        return set()
+
+
+# ─────────────────────────────────────────────
+#  LOG BATCH TO SUPABASE IMMEDIATELY
+# ─────────────────────────────────────────────
+def _log_batch(enriched_profiles: list):
+    """Log L2 results for a batch immediately after processing."""
+    try:
+        from database.supabase_logger import _get_headers, _url
+        rows = []
+        ts   = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        for p in enriched_profiles:
+            for e in p.get("affected_entities", []):
+                rows.append({
+                    "news_id":    p.get("id"),
+                    "news_title": str(p.get("title", ""))[:300],
+                    "ticker":     e.get("ticker", ""),
+                    "company":    e.get("name", ""),
+                    "industry":   e.get("industry", ""),
+                    "impact_type":e.get("impact_type", ""),
+                    "direction":  e.get("direction", ""),
+                    "confidence": e.get("confidence", 0),
+                    "reason":     str(e.get("reason", ""))[:500],
+                    "sentiment":  e.get("sentiment", ""),
+                })
+
+        if not rows:
+            return
+
+        response = requests.post(
+            _url("l2_logs"),
+            headers=_get_headers(),
+            json=rows,
+            timeout=10
+        )
+        if response.status_code in (200, 201):
+            print(f"[Layer2] ✅ Logged {len(rows)} entity rows to Supabase")
+        else:
+            print(f"[Layer2] ❌ Log failed: {response.status_code} {response.text[:100]}")
+
+    except Exception as e:
+        print(f"[Layer2] ❌ Log exception: {e}")
+
+
+# ─────────────────────────────────────────────
+#  STOCK FILTERING
+# ─────────────────────────────────────────────
 def _get_relevant_stocks(batch: list) -> str:
-    """Only send stocks from sectors relevant to this batch — saves tokens."""
     relevant_sectors  = set()
     mentioned_tickers = set()
 
@@ -66,11 +148,13 @@ def _get_relevant_stocks(batch: list) -> str:
         if ticker in _nse_lookup:
             filtered[ticker] = _nse_lookup[ticker]
 
-    # Fallback — send all if no sectors found
     source = filtered.values() if filtered else _nse_stocks
     return "\n".join(f"{s['ticker']}|{s['name']}|{s['industry']}" for s in source)
 
 
+# ─────────────────────────────────────────────
+#  PROMPT BUILDER
+# ─────────────────────────────────────────────
 def _build_prompt(batch: list) -> str:
     stock_list    = _get_relevant_stocks(batch)
     articles_text = ""
@@ -125,6 +209,9 @@ Rules:
 - Return ONLY valid JSON array, no markdown, no explanation"""
 
 
+# ─────────────────────────────────────────────
+#  MERGE RESULTS
+# ─────────────────────────────────────────────
 def _merge_results(batch: list, results: list) -> list:
     results_map = {
         str(item.get("article_id", "")): item.get("affected_entities", [])
@@ -151,40 +238,83 @@ def _merge_results(batch: list, results: list) -> list:
     return enriched
 
 
-def run_layer2(profiles: list) -> list:
+# ─────────────────────────────────────────────
+#  MAIN RUNNER
+# ─────────────────────────────────────────────
+def run_layer2(profiles: list, max_batches: int = None) -> list:
+    """
+    max_batches: limit number of batches processed this run
+                 None = process all
+                 e.g. 5 = process first 25 articles only
+    """
     if not _nse_stocks:
-        print("[Layer2] ⚠️ NSE stock list empty — call load_knowledge_graph() first")
+        print("[Layer2] ⚠️ NSE stock list empty — load_knowledge_graph() not called")
 
-    all_enriched  = []
-    total_batches = (len(profiles) + BATCH_SIZE - 1) // BATCH_SIZE
-    print(f"[Layer2] {len(profiles)} profiles → {total_batches} batches...")
+    # ── Skip already processed articles ──────
+    already_done = _get_already_processed_ids()
+    filtered     = [p for p in profiles
+                    if str(p.get("id", "")) not in already_done]
+    skipped      = len(profiles) - len(filtered)
 
-    for i in range(0, len(profiles), BATCH_SIZE):
-        batch     = profiles[i: i + BATCH_SIZE]
+    if skipped > 0:
+        print(f"[Layer2] Skipping {skipped} already-processed articles")
+
+    if not filtered:
+        print("[Layer2] All articles already processed — nothing to do")
+        return profiles   # return original with existing data
+
+    # ── Apply max_batches limit ───────────────
+    limit        = max_batches or MAX_BATCHES
+    if limit:
+        max_articles = limit * BATCH_SIZE
+        if len(filtered) > max_articles:
+            print(f"[Layer2] Limiting to {limit} batches ({max_articles} articles)")
+            filtered = filtered[:max_articles]
+
+    total_batches = (len(filtered) + BATCH_SIZE - 1) // BATCH_SIZE
+    print(f"[Layer2] {len(filtered)} profiles → {total_batches} batches "
+          f"(BATCH_SIZE={BATCH_SIZE})")
+
+    all_enriched = []
+
+    for i in range(0, len(filtered), BATCH_SIZE):
+        batch     = filtered[i: i + BATCH_SIZE]
         batch_num = (i // BATCH_SIZE) + 1
 
-        print(f"[Layer2] Batch {batch_num}/{total_batches} ({len(batch)} articles)...")
+        print(f"[Layer2] ── Batch {batch_num}/{total_batches} "
+              f"({len(batch)} articles) ──────────")
+
         results = call_llm(_build_prompt(batch))
 
         if results:
-            enriched = _merge_results(batch, results)
-            all_enriched.extend(enriched)
-            total_e = sum(e["affected_count"]["total"] for e in enriched)
-            print(f"[Layer2] Batch {batch_num} ✅ — {total_e} entities found")
+            enriched    = _merge_results(batch, results)
+            total_ents  = sum(e["affected_count"]["total"] for e in enriched)
+            print(f"[Layer2] Batch {batch_num} ✅ — {total_ents} entities found")
+
+            # ── Log this batch to Supabase immediately ──
+            _log_batch(enriched)
+
         else:
-            print(f"[Layer2] Batch {batch_num} ❌ — both LLMs failed")
+            print(f"[Layer2] Batch {batch_num} ❌ — LLM failed, logging empty results")
+            enriched = []
             for profile in batch:
-                all_enriched.append({
+                enriched.append({
                     **profile,
                     "affected_entities": [],
-                    "affected_count":    {"total":0,"direct":0,"sector":0,
-                                          "supply_chain":0,"macro":0,"competitor":0},
+                    "affected_count": {
+                        "total":0,"direct":0,"sector":0,
+                        "supply_chain":0,"macro":0,"competitor":0
+                    },
                     "layer2_processed_at": datetime.now().isoformat(),
-                    "layer2_error": "All LLM calls failed"
+                    "layer2_error": "All LLM calls failed",
                 })
 
-        if batch_num < total_batches:
-            time.sleep(2)   # shorter delay — OpenRouter is more generous
+        all_enriched.extend(enriched)
 
-    print(f"[Layer2] ✅ Complete — {len(all_enriched)} profiles enriched.")
+        # ── Delay between batches ─────────────
+        if batch_num < total_batches:
+            time.sleep(2)
+
+    print(f"[Layer2] ✅ Complete — {len(all_enriched)} profiles enriched "
+          f"({skipped} skipped as already done)")
     return all_enriched

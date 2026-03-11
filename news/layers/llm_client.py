@@ -49,7 +49,7 @@ def _call_openrouter(prompt: str) -> list | None:
             }
         ],
         "temperature":     0.1,
-        "max_tokens":      8192,
+        "max_tokens":      4096,
         "response_format": {"type": "json_object"},
     }
 
@@ -84,19 +84,29 @@ def _call_openrouter(prompt: str) -> list | None:
 
             parsed = json.loads(content)
 
-            # OpenRouter returns object — extract array if wrapped
+            # Normalize response — always return a list of dicts with ticker/article_id
             if isinstance(parsed, dict):
-                # Try common wrapper keys
-                for key in ["results", "articles", "data", "items"]:
+                # Try common wrapper keys first
+                for key in ["results", "articles", "data", "items", "predictions"]:
                     if key in parsed and isinstance(parsed[key], list):
                         return parsed[key]
-                # If it's a single prediction object, wrap in list
+                # Single prediction object
                 if "ticker" in parsed or "article_id" in parsed:
                     return [parsed]
-                # Return values if it's a dict of results
-                return list(parsed.values()) if parsed else None
+                # Dict keyed by ticker: {"HDFCBANK": {...}, "TCS": {...}}
+                # Inject ticker key into each value
+                result = []
+                for k, v in parsed.items():
+                    if isinstance(v, dict):
+                        if "ticker" not in v:
+                            v["ticker"] = k
+                        result.append(v)
+                return result if result else None
 
-            return parsed  # already a list
+            if isinstance(parsed, list):
+                return parsed
+
+            return None
 
         except json.JSONDecodeError as e:
             print(f"[OpenRouter] ❌ JSON parse error: {e}")
@@ -153,16 +163,46 @@ def _call_gemini(prompt: str) -> list | None:
                 if content.startswith("json"):
                     content = content[4:]
 
-            parsed = json.loads(content.strip())
+            content = content.strip()
+
+            # Recovery: if JSON is truncated, try to salvage complete objects
+            try:
+                parsed = json.loads(content)
+            except json.JSONDecodeError:
+                # Try truncation recovery — extract complete [...] or {...} blocks
+                import re
+                # Find all complete JSON objects in the string
+                salvaged = []
+                for match in re.finditer(r'\{[^{}]*"ticker"[^{}]*\}', content, re.DOTALL):
+                    try:
+                        obj = json.loads(match.group())
+                        salvaged.append(obj)
+                    except Exception:
+                        pass
+                if salvaged:
+                    print(f"[Gemini] ⚠️ Truncated JSON — salvaged {len(salvaged)} objects")
+                    return salvaged
+                print(f"[Gemini] ❌ JSON parse error — could not salvage")
+                return None
+
             if isinstance(parsed, dict):
-                for key in ["results", "articles", "data", "items"]:
+                for key in ["results", "articles", "data", "items", "predictions"]:
                     if key in parsed and isinstance(parsed[key], list):
                         return parsed[key]
                 if "ticker" in parsed or "article_id" in parsed:
                     return [parsed]
-                return list(parsed.values()) if parsed else None
+                result = []
+                for k, v in parsed.items():
+                    if isinstance(v, dict):
+                        if "ticker" not in v:
+                            v["ticker"] = k
+                        result.append(v)
+                return result if result else None
 
-            return parsed
+            if isinstance(parsed, list):
+                return parsed
+
+            return None
 
         except json.JSONDecodeError as e:
             print(f"[Gemini] ❌ JSON parse error: {e}")
