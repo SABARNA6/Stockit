@@ -14,4 +14,4 @@ COPY . .
 RUN mkdir -p data/output
 ENV PORT=10000
 EXPOSE 10000
-CMD gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 "api.routes:app"
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 300 "api.routes:app"

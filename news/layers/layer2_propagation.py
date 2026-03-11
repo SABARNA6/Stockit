@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 from layers.llm_client import call_llm
 
-BATCH_SIZE = 10
+BATCH_SIZE = 5
 
 # ─────────────────────────────────────────────
 #  NSE stock cache
