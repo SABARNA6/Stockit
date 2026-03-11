@@ -16,7 +16,7 @@ import requests
 #  CONFIG
 # ─────────────────────────────────────────────
 OPENROUTER_URL   = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+OPENROUTER_MODEL = "openrouter/free"
 
 GEMINI_URL       = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
 
