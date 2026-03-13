@@ -18,9 +18,8 @@ import requests
 from datetime import datetime
 from layers.llm_client import call_llm
 
-BATCH_SIZE  = 5
-MAX_BATCHES = None   # set to e.g. 5 to process only first 5 batches
-                     # set to None to process all
+BATCH_SIZE  = 10
+MAX_BATCHES = None   # None = process ALL batches
 
 # ─────────────────────────────────────────────
 #  NSE stock cache

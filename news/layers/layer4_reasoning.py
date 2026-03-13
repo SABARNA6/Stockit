@@ -246,6 +246,17 @@ def run_layer4(l3_profiles: list) -> list:
             })
             continue
 
+        # ── Strategy 4: Skip L4 for low priority profiles ──
+        top_priority = min(
+            (e.get("prediction", {}).get("alert_priority", "INFO")
+             for e in entities),
+            key=lambda x: {"IMMEDIATE":0,"WATCH":1,"INFO":2,"IGNORE":3}.get(x, 2)
+        )
+        if top_priority in ("INFO", "IGNORE"):
+            print(f"[Layer4] Skipping profile {pid} — highest priority is {top_priority}")
+            results.append({**profile, "layer4_skipped": True, "skip_reason": top_priority})
+            continue
+
         print(f"[Layer4] Profile {pid} — reasoning over {len(entities)} entities...")
 
         l4_result = call_llm(_build_prompt(profile, entities))

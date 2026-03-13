@@ -17,6 +17,7 @@ from database.supabase_logger        import (
     log_l1
 )
 from api.rss_fetcher import fetch_all_feeds
+from pipeline_optimizer import prefilter_articles, deduplicate_articles, get_next_chunk, save_progress, CHUNK_SIZE
 from layers.layer4_reasoning import run_layer4
 
 app = Flask(__name__)
@@ -81,14 +82,31 @@ def _load_stocks_from_supabase():
 #  PIPELINE RUNNER
 # ─────────────────────────────────────────────
 def _run_pipeline(articles: list) -> dict:
-    """Run L1 → L2 → L3 on a list of articles."""
+    """
+    Run optimized L1 → L2 → L3 → L4 pipeline.
+    Applies: pre-filter, dedup, chunking, batch sizing, L4 skipping
+    """
     if not articles:
         return {"layer1_relevant": 0, "layer2_enriched": 0,
-                "layer3_predicted": 0, "profiles": []}
+                "layer3_predicted": 0, "layer4_reasoned": 0,
+                "dropped": 0, "duplicates": 0, "profiles": []}
+
+    original_count = len(articles)
+
+    # ── Strategy 1: Pre-filter non-financial ─
+    articles, dropped = prefilter_articles(articles)
+
+    # ── Strategy 2: Deduplicate similar news ─
+    articles, dupes   = deduplicate_articles(articles)
+
+    chunk      = articles   # process ALL articles
+    start_idx  = 0
+    print(f"[Pipeline] {original_count} → {len(articles)} after filter/dedup "
+          f"→ processing all {len(chunk)}")
 
     # ── Layer 1 ──────────────────────────────
     l1_profiles = []
-    for article in articles:
+    for article in chunk:
         try:
             profile = build_unified_profile(article)
             if profile["novelty"]["is_duplicate"]:
@@ -99,23 +117,36 @@ def _run_pipeline(articles: list) -> dict:
             print(f"[ERROR] L1 failed for {article.get('id')}: {e}")
 
     l1_profiles.sort(key=lambda x: x["relevance_score"], reverse=True)
-    log_l1(l1_profiles)       # ← synchronous, no threading
+    log_l1(l1_profiles)
 
     # ── Layer 2 ──────────────────────────────
     l2_profiles = run_layer2(l1_profiles)
+
     # ── Layer 3 ──────────────────────────────
     l3_profiles = run_layer3(l2_profiles)
-    # L2 and L3 log themselves per batch/profile
 
-    # ── Layer 4 ──────────────────────────────
+    # ── Layer 4 (IMMEDIATE + WATCH only) ─────
     l4_profiles = run_layer4(l3_profiles)
 
+    # ── Save progress ─────────────────────────
+    save_progress(
+        index    = start_idx + len(chunk),
+        total    = len(articles),
+        relevant = len(l1_profiles),
+        status   = "IN PROGRESS" if start_idx + len(chunk) < len(articles) else "COMPLETE"
+    )
+
     return {
-        "layer1_relevant":  len(l1_profiles),
-        "layer2_enriched":  len(l2_profiles),
-        "layer3_predicted": len(l3_profiles),
-        "layer4_reasoned":  len(l4_profiles),
-        "profiles":         l4_profiles,
+        "original":        original_count,
+        "after_filter":    len(articles),
+        "dropped":         dropped,
+        "duplicates":      dupes,
+        "chunk_size":      len(chunk),
+        "layer1_relevant": len(l1_profiles),
+        "layer2_enriched": len(l2_profiles),
+        "layer3_predicted":len(l3_profiles),
+        "layer4_reasoned": len(l4_profiles),
+        "profiles":        l4_profiles,
     }
 
 
@@ -285,52 +316,69 @@ def get_stock(ticker: str):
     ticker  = ticker.upper().strip()
     hours   = int(request.args.get("hours", 24))
     limit   = int(request.args.get("limit", 20))
-
     since   = (datetime.now() - __import__('datetime').timedelta(hours=hours)).isoformat()
 
-    l4_resp = req.get(
-        _url("l4_logs") +
-        f"?ticker=eq.{ticker}"
-        f"&created_at=gte.{since}"
-        f"&order=created_at.desc"
-        f"&limit={limit}"
-        f"&select=*",
-        headers=_get_headers(),
-        timeout=10
-    )
+    def _fetch(table, extra_select="*"):
+        r = req.get(
+            _url(table) +
+            f"?ticker=eq.{ticker}"
+            f"&created_at=gte.{since}"
+            f"&order=created_at.desc"
+            f"&limit={limit}"
+            f"&select={extra_select}",
+            headers=_get_headers(), timeout=10
+        )
+        return r.json() if r.status_code == 200 else []
 
-    l2_resp = req.get(
-        _url("l2_logs") +
-        f"?ticker=eq.{ticker}"
-        f"&created_at=gte.{since}"
-        f"&order=created_at.desc"
-        f"&limit={limit}"
-        f"&select=news_id,news_title,impact_type,direction,confidence,reason,created_at",
-        headers=_get_headers(),
-        timeout=10
-    )
+    # ── Try l4_logs first, fall back to l3_logs ──
+    l4_rows = _fetch("l4_logs")
+    l3_rows = _fetch("l3_logs") if not l4_rows else []
+    l2_rows = _fetch("l2_logs", "news_id,news_title,impact_type,direction,confidence,reason,created_at")
 
-    l4_rows = l4_resp.json() if l4_resp.status_code == 200 else []
-    l2_rows = l2_resp.json() if l2_resp.status_code == 200 else []
+    signal_rows = l4_rows or l3_rows
+    data_source = "l4_logs" if l4_rows else ("l3_logs" if l3_rows else None)
 
-    if not l4_rows and not l2_rows:
+    if not signal_rows:
+        # Widen search to 7 days automatically
+        since7 = (datetime.now() - __import__('datetime').timedelta(hours=168)).isoformat()
+        def _fetch7(table, extra_select="*"):
+            r = req.get(
+                _url(table) +
+                f"?ticker=eq.{ticker}"
+                f"&created_at=gte.{since7}"
+                f"&order=created_at.desc"
+                f"&limit={limit}"
+                f"&select={extra_select}",
+                headers=_get_headers(), timeout=10
+            )
+            return r.json() if r.status_code == 200 else []
+
+        l4_rows     = _fetch7("l4_logs")
+        l3_rows     = _fetch7("l3_logs") if not l4_rows else []
+        signal_rows = l4_rows or l3_rows
+        data_source = "l4_logs(7d)" if l4_rows else ("l3_logs(7d)" if l3_rows else None)
+        hours       = 168  # update for response
+
+    if not signal_rows:
         return jsonify({
-            "ticker":  ticker,
-            "message": f"No data found for {ticker} in last {hours} hours",
-            "signals": []
+            "ticker":      ticker,
+            "hours":       hours,
+            "data_source": None,
+            "message":     f"No data found for {ticker} — pipeline may not have processed relevant news yet",
+            "signals":     []
         })
 
     l2_map = {str(r["news_id"]): r for r in l2_rows}
 
     merged = []
-    for row in l4_rows:
+    for row in signal_rows:
         news_id = str(row.get("news_id", ""))
         l2      = l2_map.get(news_id, {})
         merged.append({
             "news_id":           row.get("news_id"),
             "news_title":        row.get("news_title"),
             "created_at":        row.get("created_at"),
-            "impact_type":       l2.get("impact_type", row.get("impact_type")),
+            "impact_type":       l2.get("impact_type",  row.get("impact_type", "")),
             "impact_reason":     l2.get("reason", ""),
             "alert_priority":    row.get("alert_priority"),
             "direction":         row.get("direction"),
@@ -341,9 +389,11 @@ def get_stock(ticker: str):
             "current_price":     row.get("current_price"),
             "trend_8d_pct":      row.get("trend_8d_pct"),
             "volatility":        row.get("volatility"),
-            "l4_rationale":      row.get("l4_rationale"),
-            "l4_flag":           row.get("l4_flag"),
-            "reasoning_summary": row.get("reasoning_summary"),
+            "reasoning":         row.get("reasoning", row.get("l4_rationale", "")),
+            "key_risks":         row.get("key_risks", ""),
+            "l4_rationale":      row.get("l4_rationale", ""),
+            "l4_flag":           row.get("l4_flag", ""),
+            "reasoning_summary": row.get("reasoning_summary", ""),
         })
 
     immediate = [r for r in merged if r["alert_priority"] == "IMMEDIATE"]
@@ -352,8 +402,9 @@ def get_stock(ticker: str):
     bearish   = [r for r in merged if r["direction"] == "DOWN"]
 
     return jsonify({
-        "ticker":  ticker,
-        "hours":   hours,
+        "ticker":      ticker,
+        "hours":       hours,
+        "data_source": data_source,
         "summary": {
             "total_signals":   len(merged),
             "immediate":       len(immediate),

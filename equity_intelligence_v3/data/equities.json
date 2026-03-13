@@ -1,0 +1,23 @@
+[
+  {
+    "symbol": "NGLFINE",
+    "name": "NGL Fine-Chem Limited",
+    "sector": "chemicals",
+    "industry": "Specialty Chemicals",
+    "priority": 2,
+    "peers": [
+      "Pidilite",
+      "SRF",
+      "Deepak Nitrite",
+      "Tata Chemicals"
+    ],
+    "revenue_exposure": "High export orientation (USD/EUR); significant import dependency for intermediates (China/ME)",
+    "risks": [
+      "China import dependency",
+      "environmental regulations",
+      "raw material volatility",
+      "global demand slowdown",
+      "currency exposure"
+    ]
+  }
+]

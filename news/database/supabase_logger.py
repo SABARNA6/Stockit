@@ -1,6 +1,6 @@
 """
 =====================================================================
-  db/supabase_logger.py
+  database/supabase_logger.py
   Fast Supabase logging for all pipeline layers
   Replaces slow Google Sheets + Apps Script doPost approach
   
