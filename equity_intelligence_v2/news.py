@@ -1,12 +1,10 @@
 import os
 import hashlib
 from datetime import datetime, timedelta
-from email.utils import parsedate_to_datetime
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
 load_dotenv()
-NEWS_RETENTION_DAYS = int(os.getenv("NEWS_RETENTION_DAYS", "7"))
 
 # ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
 
@@ -16,76 +14,6 @@ def _client() -> Client:
     if not url or not key:
         raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY in .env file")
     return create_client(url, key)
-
-
-def _parse_datetime(value: str | None) -> datetime | None:
-    """Best-effort parser for ISO8601 and RSS-style dates."""
-    if not value:
-        return None
-
-    text = value.strip()
-    if not text:
-        return None
-
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        pass
-
-    try:
-        return parsedate_to_datetime(text)
-    except (TypeError, ValueError, IndexError):
-        return None
-
-
-def _to_utc_naive(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is not None:
-        return value.astimezone().replace(tzinfo=None)
-    return value
-
-
-def prune_old_news(days: int = NEWS_RETENTION_DAYS) -> int:
-    """
-    Delete rows older than `days` from rss_pool based on published_date.
-    Falls back to created_at when published_date is missing/unparseable.
-    Returns number of deleted rows (best effort).
-    """
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    try:
-        client = _client()
-        response = (
-            client.table("rss_pool")
-            .select("id, published_date, created_at")
-            .execute()
-        )
-        rows = response.data or []
-
-        old_ids = []
-        for row in rows:
-            published_at = _to_utc_naive(_parse_datetime(row.get("published_date")))
-            created_at = _to_utc_naive(_parse_datetime(row.get("created_at")))
-            effective_date = published_at or created_at
-            if effective_date and effective_date < cutoff:
-                old_ids.append(row["id"])
-
-        deleted = 0
-        for start in range(0, len(old_ids), 500):
-            batch_ids = old_ids[start:start + 500]
-            delete_response = (
-                client.table("rss_pool")
-                .delete()
-                .in_("id", batch_ids)
-                .execute()
-            )
-            deleted += len(delete_response.data or [])
-
-        print(f"[news] retention cleanup: removed {deleted} rows older than {days} days")
-        return deleted
-    except Exception as e:
-        print(f"[news] retention cleanup failed: {e}")
-        return 0
 
 
 # ─── FETCH ────────────────────────────────────────────────────────────────────

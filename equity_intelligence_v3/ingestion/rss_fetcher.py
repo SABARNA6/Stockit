@@ -7,14 +7,48 @@
 """
 
 import os
+import json
+import time
 import requests
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from ingestion import news
 
-load_dotenv()
+ROOT_DIR = Path(__file__).resolve().parents[1]
+NEWSAPI_SYMBOLS_PATH = ROOT_DIR / "data" / "newsapi_symbols.json"
+load_dotenv(ROOT_DIR / ".env")
+NEWSAPI_URL = "https://newsapi.org/v2/everything"
+
+
+def _newsapi_key() -> str:
+    return os.getenv("NEWSAPI_KEY", "").strip()
+
+
+def _newsapi_lookback_days() -> int:
+    return int(os.getenv("NEWSAPI_LOOKBACK_DAYS", "30"))
+
+
+def _newsapi_max_stocks() -> int:
+    return int(os.getenv("NEWSAPI_MAX_STOCKS", "15"))
+
+
+def _newsapi_page_size() -> int:
+    return int(os.getenv("NEWSAPI_PAGE_SIZE", "8"))
+
+
+def _newsapi_request_delay_sec() -> float:
+    return float(os.getenv("NEWSAPI_REQUEST_DELAY_SEC", "0.6"))
+
+
+def _newsapi_max_retries() -> int:
+    return int(os.getenv("NEWSAPI_MAX_RETRIES", "2"))
+
+
+def _newsapi_backoff_sec() -> float:
+    return float(os.getenv("NEWSAPI_BACKOFF_SEC", "2.0"))
 
 # ─────────────────────────────────────────────
 #  SUPABASE CLIENT
@@ -172,14 +206,27 @@ def _fetch_feed(feed: dict, existing_links: set) -> tuple[list, int]:
     skipped    = 0
 
     try:
+        headers = {"User-Agent": "Mozilla/5.0 NewsBot/1.0"}
         response = requests.get(
             url,
             timeout=15,
-            headers={"User-Agent": "Mozilla/5.0 NewsBot/1.0"},
+            headers=headers,
             allow_redirects=True
         )
+
+        # Some sources return 426 (Upgrade Required) for plain HTTP URLs.
+        if response.status_code == 426 and url.startswith("http://"):
+            upgraded_url = "https://" + url[len("http://") :]
+            print(f"[RSS] ⚠️  {source} — HTTP 426, retrying with HTTPS URL")
+            response = requests.get(
+                upgraded_url,
+                timeout=15,
+                headers=headers,
+                allow_redirects=True
+            )
+
         if response.status_code != 200:
-            print(f"[RSS] ❌ {source} — HTTP {response.status_code}")
+            print(f"[RSS] ❌ {source} — HTTP {response.status_code} {response.text[:160]}")
             return [], 0
 
         items = _parse_rss(response.text)
@@ -210,6 +257,170 @@ def _fetch_feed(feed: dict, existing_links: set) -> tuple[list, int]:
         print(f"[RSS] ❌ {source} — {e}")
 
     return new_articles, skipped
+
+
+def load_nse_stocks(limit: int | None = None) -> list[dict]:
+    """
+    Load the curated NewsAPI stock universe from JSON.
+    Handles missing nullable fields by normalizing to empty strings.
+    """
+    if limit is None:
+        limit = _newsapi_max_stocks()
+
+    try:
+        with open(NEWSAPI_SYMBOLS_PATH, encoding="utf-8") as f:
+            rows = json.load(f)
+
+        stocks = []
+        for row in rows[:limit]:
+            ticker = (row.get("symbol") or row.get("ticker") or "").strip().upper()
+            if not ticker:
+                continue
+            stocks.append({
+                "ticker": ticker,
+                "company_name": (row.get("company_name") or "").strip(),
+                "industry": (row.get("industry") or "").strip(),
+                "series": (row.get("series") or "").strip(),
+                "isin_code": (row.get("isin_code") or row.get("isin") or "").strip(),
+            })
+
+        print(f"[NewsAPI] Loaded {len(stocks)} stocks from newsapi_symbols.json")
+        return stocks
+    except Exception as e:
+        print(f"[NewsAPI] ❌ Exception loading newsapi_symbols.json: {e}")
+        return []
+
+
+def _newsapi_query(stock: dict) -> str:
+    """Build a plain NewsAPI query: company name (fallback: ticker)."""
+    ticker = stock["ticker"]
+    company = stock.get("company_name", "")
+
+    if company:
+        return company
+    return ticker
+
+
+def _normalize_newsapi_article(article: dict, stock: dict) -> dict | None:
+    """
+    Convert NewsAPI payload to rss_pool row format.
+    Returns None when essential fields are missing.
+    """
+    title = (article.get("title") or "").strip()
+    summary = (article.get("description") or article.get("content") or "").strip()
+    link = (article.get("url") or "").strip()
+    published = (article.get("publishedAt") or "").strip()
+
+    # Missing values handling: keep only records with minimum required fields.
+    if not title or not link:
+        return None
+
+    source_obj = article.get("source") or {}
+    source_name = (source_obj.get("name") or "NewsAPI").strip()
+    ticker = stock.get("ticker", "")
+
+    return {
+        "title": f"[{ticker}] {title}"[:500],
+        "link": link[:1000],
+        "summary": (summary or f"News article related to {ticker}")[:2000],
+        "published_date": published,
+        "source": source_name[:120],
+        "rss_id": None,
+    }
+
+
+def fetch_newsapi_equity_articles(existing_links: set) -> tuple[list, int, int]:
+    """
+    Fetch equity news from NewsAPI for symbols in newsapi_symbols.json.
+    Filters to last NEWSAPI_LOOKBACK_DAYS days.
+    Returns (new_articles, skipped_duplicates, failed_stocks).
+    """
+    newsapi_key = _newsapi_key()
+    if not newsapi_key:
+        print("[NewsAPI] Skipped: NEWSAPI_KEY not configured")
+        return [], 0, 0
+
+    stocks = load_nse_stocks()
+    if not stocks:
+        return [], 0, 0
+
+    new_articles: list[dict] = []
+    skipped = 0
+    failed = 0
+
+    request_delay = _newsapi_request_delay_sec()
+    max_retries = _newsapi_max_retries()
+    base_backoff = _newsapi_backoff_sec()
+
+    for stock in stocks:
+        params = {
+            "q": _newsapi_query(stock),
+            "language": "en",
+            "sortBy": "publishedAt",
+            "pageSize": _newsapi_page_size(),
+            "apiKey": newsapi_key,
+        }
+        try:
+            response = None
+            for attempt in range(max_retries + 1):
+                response = requests.get(NEWSAPI_URL, params=params, timeout=20)
+
+                if response.status_code != 429:
+                    break
+
+                retry_after_header = response.headers.get("Retry-After", "").strip()
+                if retry_after_header.isdigit():
+                    wait_sec = float(retry_after_header)
+                else:
+                    wait_sec = base_backoff * (2 ** attempt)
+
+                if attempt < max_retries:
+                    print(
+                        f"[NewsAPI] ⚠️  {stock['ticker']} — HTTP 429, "
+                        f"retrying in {wait_sec:.1f}s (attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_sec)
+
+            if response is None or response.status_code != 200:
+                failed += 1
+                code = response.status_code if response is not None else "NO_RESPONSE"
+                details = ""
+                if response is not None:
+                    details = f" {response.text[:160]}"
+                print(f"[NewsAPI] ❌ {stock['ticker']} — HTTP {code}{details}")
+                time.sleep(request_delay)
+                continue
+
+            payload = response.json() or {}
+            rows = payload.get("articles") or []
+            stock_new = 0
+
+            for row in rows:
+                normalized = _normalize_newsapi_article(row, stock)
+                if not normalized:
+                    continue
+
+                link = normalized["link"]
+                if link in existing_links:
+                    skipped += 1
+                    continue
+
+                existing_links.add(link)
+                new_articles.append(normalized)
+                stock_new += 1
+
+            print(f"[NewsAPI] {stock['ticker']} — {stock_new} new")
+            time.sleep(request_delay)
+        except Exception as e:
+            failed += 1
+            print(f"[NewsAPI] ❌ {stock['ticker']} — {e}")
+            time.sleep(request_delay)
+
+    print(
+        f"[NewsAPI] Done — {len(new_articles)} new, {skipped} skipped, "
+        f"{failed} stock queries failed"
+    )
+    return new_articles, skipped, failed
 
 
 # ─────────────────────────────────────────────
@@ -253,7 +464,7 @@ def _log_to_pool_logs(result: dict):
             "skipped": result.get("total_skipped", 0),
             "total_pool": result.get("total_pool", 0),
             "message": result.get("message", ""),
-            "triggered_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.utcnow().isoformat(),
         }
         client.table("pool_logs").insert(log_entry).execute()
         print(f"[RSS] ✅ Logged to pool_logs")
@@ -276,19 +487,25 @@ def fetch_all_feeds() -> dict:
 
     feeds = load_rss_feeds()
     if not feeds:
-        return {
-            "status": "error",
-            "message": "No active feeds found in Supabase rss_feeds table",
-            "feeds_fetched": 0,
-            "total_new": 0,
-            "total_skipped": 0,
-        }
+        print("[RSS] No active RSS feeds found in rss_feeds table; continuing with NewsAPI only")
 
     existing_links = load_existing_links()
 
     all_new_articles = []
     feed_results     = []
 
+    # ── Fetch equity news from NewsAPI first (last 30 days) ────────
+    newsapi_articles, newsapi_skipped, newsapi_failed = fetch_newsapi_equity_articles(existing_links)
+    if newsapi_articles or newsapi_skipped or newsapi_failed:
+        all_new_articles.extend(newsapi_articles)
+        feed_results.append({
+            "source": "NewsAPI (newsapi_symbols.json)",
+            "new": len(newsapi_articles),
+            "skipped": newsapi_skipped,
+            "failed_stocks": newsapi_failed,
+        })
+
+    # ── Then fetch classic RSS feeds ────────────────────────────────
     for feed in feeds:
         new_articles, skipped = _fetch_feed(feed, existing_links)
         all_new_articles.extend(new_articles)
