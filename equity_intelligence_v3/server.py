@@ -10,6 +10,7 @@ import os
 from flask import Flask, jsonify
 from dotenv import load_dotenv
 from routes.rss_routes import rss_bp
+from routes.analysis_routes import analysis_bp
 
 load_dotenv()
 
@@ -20,6 +21,7 @@ app = Flask(__name__)
 
 # Register blueprints
 app.register_blueprint(rss_bp)
+app.register_blueprint(analysis_bp)
 
 
 # ─────────────────────────────────────────────
@@ -37,9 +39,14 @@ def home():
             "rss": {
                 "trigger_fetch": "GET|POST /api/rss/trigger",
                 "status": "GET /api/rss/status",
+            },
+            "analysis": {
+                "stock_analysis": "GET /api/analyze/<symbol>?hours_back=24",
+                "api_limits": "GET /api/limits",
+                "equities_sync": "GET|POST /api/equities/sync",
             }
         },
-        "documentation": "See /api/rss/status for RSS endpoints"
+        "documentation": "See /api/rss/status, /api/analyze/<symbol>, /api/limits, /api/equities/sync"
     }), 200
 
 

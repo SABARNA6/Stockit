@@ -19,5 +19,27 @@
       "global demand slowdown",
       "currency exposure"
     ]
+  },
+  {
+    "symbol": "TCS",
+    "name": "Tata Consultancy Services Limited",
+    "sector": "IT",
+    "industry": "Information Technology Services",
+    "priority": 1,
+    "peers": [
+      "Infosys",
+      "Wipro",
+      "HCL Technologies",
+      "Tech Mahindra",
+      "LTIMindtree"
+    ],
+    "revenue_exposure": "~85% USD revenue from US (55%) and Europe (30%) clients across BFSI, retail, and manufacturing",
+    "risks": [
+      "US IT spending slowdown",
+      "USD/INR exchange rate",
+      "H1-B visa policy",
+      "AI disruption to services",
+      "client concentration"
+    ]
   }
 ]

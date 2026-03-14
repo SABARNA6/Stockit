@@ -1,8 +1,18 @@
 from datetime import datetime
 from core import cache
+from core import price_impact
 from tiers import tier1
 from tiers import tier2
 from tiers import tier3
+
+
+def _has_bad_cached_causes(result: dict) -> bool:
+    rows = result.get("results") or []
+    for row in rows:
+        cause = (row.get("cause") or "").lower()
+        if "parse error" in cause or "check logs" in cause:
+            return True
+    return False
 
 
 def _sentiment_score(results: list[dict]) -> float:
@@ -42,9 +52,12 @@ def run(articles: list[dict], equity: dict) -> dict:
     eq_key = cache.equity_key(symbol)
     cached = cache.get(eq_key)
     if cached:
-        print(f"[pipeline] CACHE HIT for {symbol} — returning cached result")
-        cached["cache_status"] = "hit"
-        return cached
+        if _has_bad_cached_causes(cached):
+            print(f"[pipeline] CACHE BYPASS for {symbol} — stale fallback causes detected")
+        else:
+            print(f"[pipeline] CACHE HIT for {symbol} — returning cached result")
+            cached["cache_status"] = "hit"
+            return cached
 
     start = datetime.now()
 
@@ -63,6 +76,9 @@ def run(articles: list[dict], equity: dict) -> dict:
     # ── Tier 3: deep analysis ────────────────────────────────────────
     t3_results = tier3.run(t2_results, equity)
 
+    # ── Price impact estimation (rule-based, no beta) ───────────────
+    t3_results, impact_summary = price_impact.apply(t3_results)
+
     # ── Build output ─────────────────────────────────────────────────
     sentiment = _sentiment_score(t3_results)
     elapsed   = round((datetime.now() - start).total_seconds(), 1)
@@ -76,6 +92,7 @@ def run(articles: list[dict], equity: dict) -> dict:
         "articles_analyzed": len(t3_results),
         "sentiment_score":   sentiment,
         "overall_direction": _overall_direction(sentiment),
+        "price_impact":      impact_summary,
         "results":           t3_results,
     }
 

@@ -15,16 +15,28 @@ def load_equities() -> list[dict]:
 
 
 def print_results(result: dict):
+    impact = result.get("price_impact", {})
+    signals = impact.get("signals", {})
+
     print(f"\n{'═'*70}")
-    print(f"  EQUITY    : {result.get('symbol')}")
-    print(f"  DIRECTION : {result.get('overall_direction')}")
-    print(f"  SENTIMENT : {result.get('sentiment_score')} / 10")
-    print(f"  ARTICLES  : {result.get('articles_analyzed')} analyzed")
-    print(f"  STATUS    : {result.get('cache_status')}")
+    print(f"  EQUITY          : {result.get('symbol')}")
+    print(
+        f"  OVERALL MOVE    : {impact.get('overall_move_range', 'N/A')} "
+        f"- {signals.get('bullish', 0)} bullish, {signals.get('bearish', 0)} bearish"
+    )
+    print(f"  DIRECTION       : {impact.get('overall_direction', result.get('overall_direction'))}")
+    print(
+        f"  SIGNALS         : {signals.get('bullish', 0)} bullish | "
+        f"{signals.get('bearish', 0)} bearish | {signals.get('neutral', 0)} neutral"
+    )
+    print(f"  SENTIMENT       : {result.get('sentiment_score')} / 10")
+    print(f"  ARTICLES        : {result.get('articles_analyzed')} analyzed")
+    print(f"  STATUS          : {result.get('cache_status')}")
     print(f"{'─'*70}")
 
     for r in result.get("results", []):
         print(f"\n  TITLE     : {r.get('title', 'N/A')}")
+        print(f"  PRICE EST : {r.get('predicted_move_range', 'N/A')} - {r.get('predicted_move_reason', 'N/A')}")
         print(f"  IMPACT    : {r.get('impact','?')}  |  "
               f"DIRECTION: {r.get('direction','?')}  |  "
               f"CONFIDENCE: {r.get('confidence','?')}  |  "

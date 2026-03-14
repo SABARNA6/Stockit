@@ -136,3 +136,27 @@ def stats():
         ).fetchall()
     for r in rows:
         print(f"[cache] layer={r['layer']}  entries={r['n']}  total_hits={r['hits']}")
+
+
+def snapshot() -> dict:
+    """Return structured cache metrics for API responses."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT layer, COUNT(*) as n, COALESCE(SUM(hit_count), 0) as hits FROM cache GROUP BY layer"
+        ).fetchall()
+        totals = c.execute(
+            "SELECT COUNT(*) as total_entries, COALESCE(SUM(hit_count), 0) as total_hits FROM cache"
+        ).fetchone()
+
+    per_layer = {
+        r["layer"]: {
+            "entries": int(r["n"] or 0),
+            "hits": int(r["hits"] or 0),
+        }
+        for r in rows
+    }
+    return {
+        "total_entries": int(totals["total_entries"] or 0),
+        "total_hits": int(totals["total_hits"] or 0),
+        "layers": per_layer,
+    }
