@@ -1,0 +1,5 @@
+http://localhost:5000/
+http://localhost:5000/api/rss/status
+http://localhost:5000/api/rss/trigger
+http://localhost:5000/api/analyze/NGLFINE?hours_back=24
+http://localhost:5000/api/limits
