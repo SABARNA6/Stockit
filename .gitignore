@@ -29,3 +29,7 @@ package-lock.json
 
 # Logs
 *.log
+
+#Models
+StrategyRecommendationModel/
+PricePredictionModel/
