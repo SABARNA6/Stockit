@@ -90,8 +90,14 @@ function AppInner() {
   const [isLight, setIsLight] = useState(true); // ← light by default
   const [page, setPage] = useState("market"); // "market" | "portfolio" | "auth"
 
-  const { overview, sparkline, trends, recommendation, error } =
-    useStockData(symbol);
+  const {
+    overview,
+    sparkline,
+    trends,
+    recommendation,
+    error,
+    loading: stockLoading,
+  } = useStockData(symbol);
 
   useEffect(() => {
     document.documentElement.classList.toggle("light", isLight);
@@ -233,17 +239,38 @@ function AppInner() {
 
       <main className="main-content">
         <section id="sec-overview" className="content-section">
-          <StockHeader
-            overview={overview}
-            sparkline={sparkline}
-            onWatchlist={() => setPage("auth")}
-          />
+          {stockLoading ? (
+            <div className="header-skeleton">
+              <div className="skel skel-wide" />
+              <div className="skel skel-med" />
+              <div className="skel skel-wide" />
+            </div>
+          ) : (
+            <StockHeader
+              overview={overview}
+              sparkline={sparkline}
+              onWatchlist={() => setPage("auth")}
+            />
+          )}
         </section>
 
         <section className="content-section two-col-layout">
           <div className="col-main">
             <SectionTitle>Price Chart</SectionTitle>
-            <PriceChart symbol={symbol} theme={isLight ? "light" : "dark"} />
+            {/* Only mount PriceChart after overview is loaded */}
+            {stockLoading || !overview?.lastUpdated ? (
+              <div
+                style={{
+                  padding: "40px 20px",
+                  textAlign: "center",
+                  color: "var(--text-muted)",
+                }}
+              >
+                Loading chart data...
+              </div>
+            ) : (
+              <PriceChart symbol={symbol} theme={isLight ? "light" : "dark"} />
+            )}
             <div style={{ marginTop: 20 }}>
               <SectionTitle>Market Signals</SectionTitle>
               <TrendSignals trends={trends} />
@@ -258,20 +285,25 @@ function AppInner() {
           </div>
         </section>
 
-        <section id="sec-fundamentals" className="content-section">
-          <SectionTitle>Fundamental Analysis</SectionTitle>
-          <FundamentalsGrid symbol={symbol} />
-        </section>
+        {/* Only render these sections after overview loads successfully */}
+        {!stockLoading && overview?.lastUpdated && (
+          <>
+            <section id="sec-fundamentals" className="content-section">
+              <SectionTitle>Fundamental Analysis</SectionTitle>
+              <FundamentalsGrid symbol={symbol} />
+            </section>
 
-        <section id="sec-news" className="content-section">
-          <SectionTitle>News & Sentiment</SectionTitle>
-          <NewsFeed symbol={symbol} />
-        </section>
+            <section id="sec-news" className="content-section">
+              <SectionTitle>News & Sentiment</SectionTitle>
+              <NewsFeed symbol={symbol} />
+            </section>
 
-        <section id="sec-historical" className="content-section">
-          <SectionTitle>Historical Data</SectionTitle>
-          <HistoricalTable symbol={symbol} />
-        </section>
+            <section id="sec-historical" className="content-section">
+              <SectionTitle>Historical Data</SectionTitle>
+              <HistoricalTable symbol={symbol} />
+            </section>
+          </>
+        )}
       </main>
 
       <footer className="app-footer mono">

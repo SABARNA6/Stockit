@@ -1,0 +1,45 @@
+services:
+  equity-intelligence:
+    build:
+      context: ./equity_intelligence_v3
+      dockerfile: dockerfile
+    env_file:
+      - ./equity_intelligence_v3/.env
+    environment:
+      PORT: 5000
+    ports:
+      - "5000:5000"
+    networks:
+      - stockit-net
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    env_file:
+      - ./server/.env
+    environment:
+      PORT: 10000
+      EQUITY_INTELLIGENCE_URL: http://equity-intelligence:5000
+      FRONTEND_URL: http://localhost:3000
+    depends_on:
+      - equity-intelligence
+    ports:
+      - "10000:10000"
+    networks:
+      - stockit-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - server
+    ports:
+      - "3000:80"
+    networks:
+      - stockit-net
+
+networks:
+  stockit-net:
+    driver: bridge

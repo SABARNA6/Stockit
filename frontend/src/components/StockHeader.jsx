@@ -497,7 +497,7 @@ export default function StockHeader({ overview, sparkline, onSignInRequired }) {
       .eq("symbol", overview.symbol)
       .maybeSingle()
       .then(({ data }) => {
-        if (data) setInWatchlist(true);
+        setInWatchlist(!!data);
       });
   }, [user, overview?.symbol]);
 

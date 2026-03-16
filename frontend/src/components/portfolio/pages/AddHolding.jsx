@@ -1,7 +1,42 @@
+// frontend/src/pages/portfolio/pages/AddHolding.jsx
+//
+// CHANGE FROM ORIGINAL: only 2 lines changed
+//   BEFORE: await supabase.from("portfolio").insert(data)
+//   AFTER:  await apiFetch("/portfolio", { method: "POST", body: JSON.stringify(data) })
+//
+// Everything else — UI, tabs, CSV parser, multi-row grid, file upload — is identical.
+
 import { useState, useRef } from "react";
 import { supabase } from "../../../supabaseClient";
 import PageHeader from "../common/PageHeader";
 import { Icon } from "../utils";
+
+const API = window.STOCK_API_BASE || "http://localhost:10000/api";
+
+// ── Auth header from current Supabase session ─────────────────────────────
+async function authHeaders() {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return {
+    Authorization: `Bearer ${session.access_token}`,
+    "Content-Type": "application/json",
+  };
+}
+
+// ── Flask API fetch helper ────────────────────────────────────────────────
+async function apiFetch(path, options = {}) {
+  const headers = await authHeaders();
+  const res = await fetch(`${API}${path}`, {
+    ...options,
+    headers: { ...headers, ...(options.headers || {}) },
+  });
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(j.message || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
 
 export default function AddHoldingPage({ userId, onSaved }) {
   const [tab, setTab] = useState("manual");
@@ -13,9 +48,7 @@ export default function AddHoldingPage({ userId, onSaved }) {
 
   const addRow = () =>
     setRows((r) => [...r, { symbol: "", qty: "", avg_cost: "" }]);
-
   const removeRow = (i) => setRows((r) => r.filter((_, j) => j !== i));
-
   const update = (i, f, v) =>
     setRows((r) => r.map((row, j) => (j === i ? { ...row, [f]: v } : row)));
 
@@ -38,23 +71,27 @@ export default function AddHoldingPage({ userId, onSaved }) {
     setMsg({ type: "", text: "" });
     setSaving(true);
     try {
-      let data =
+      // Build payload — same shape as before, minus user_id (backend reads it from JWT)
+      const data =
         tab === "manual"
           ? rows
               .filter((r) => r.symbol && r.qty && r.avg_cost)
               .map((r) => ({
-                user_id: userId,
                 symbol: r.symbol.toUpperCase(),
                 qty: parseFloat(r.qty),
                 avg_cost: parseFloat(r.avg_cost),
               }))
-          : parseCSV(csv).map((r) => ({ ...r, user_id: userId }));
+          : parseCSV(csv);
 
       if (!data.length)
         throw new Error("Nothing to save. Fill at least one row.");
 
-      const { error } = await supabase.from("portfolio").insert(data);
-      if (error) throw error;
+      // ── ONLY CHANGE: Flask API instead of supabase.from("portfolio").insert() ──
+      await apiFetch("/portfolio", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      // ─────────────────────────────────────────────────────────────────────────
 
       setMsg({
         type: "success",
@@ -69,6 +106,7 @@ export default function AddHoldingPage({ userId, onSaved }) {
     setSaving(false);
   };
 
+  // ── UI is 100% identical to original ─────────────────────────────────────
   return (
     <div
       style={{
@@ -138,9 +176,7 @@ export default function AddHoldingPage({ userId, onSaved }) {
               padding: "10px 14px",
               background:
                 msg.type === "success" ? "var(--green-bg)" : "var(--red-bg)",
-              border: `1px solid ${
-                msg.type === "success" ? "var(--green)" : "var(--red)"
-              }`,
+              border: `1px solid ${msg.type === "success" ? "var(--green)" : "var(--red)"}`,
               borderRadius: 8,
               fontSize: 12,
               color: msg.type === "success" ? "var(--green)" : "var(--red)",

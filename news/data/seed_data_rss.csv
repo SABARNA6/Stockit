@@ -1,0 +1,56 @@
+rss_id,name,country,category,link
+1.0,Times of India,India,News & Current Affairs,https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms
+2.0,NDTV,India,News & Current Affairs,https://feeds.feedburner.com/ndtvnews-top-stories
+3.0,The Hindu,India,News & Current Affairs,https://www.thehindu.com/news/national/feeder/default.rss
+4.0,Indian Express,India,News & Current Affairs,https://indianexpress.com/feed/
+5.0,Hindustan Times,India,News & Current Affairs,https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml
+6.0,BBC News,International,News & Current Affairs,https://feeds.bbci.co.uk/news/rss.xml
+8.0,The Guardian,International,News & Current Affairs,https://www.theguardian.com/world/rss
+9.0,Al Jazeera,International,News & Current Affairs,https://www.aljazeera.com/xml/rss/all.xml
+12.0,Inc42,India,Technology & Startups,https://inc42.com/feed/
+13.0,YourStory,India,Technology & Startups,https://yourstory.com/feed
+14.0,SiliconIndia,India,Technology & Startups,https://feeds2.feedburner.com/sitechnews
+16.0,TechCrunch,International,Technology & Startups,https://techcrunch.com/feed/
+17.0,The Verge,International,Technology & Startups,https://www.theverge.com/rss/index.xml
+18.0,Wired,International,Technology & Startups,https://www.wired.com/feed/rss
+19.0,Ars Technica,International,Technology & Startups,https://feeds.arstechnica.com/arstechnica/index
+20.0,VentureBeat,International,Technology & Startups,https://venturebeat.com/feed/
+21.0,LiveMint,India,Business & Finance,https://www.livemint.com/rss/markets
+22.0,Moneycontrol,India,Business & Finance,https://www.moneycontrol.com/rss/business.xml
+23.0,Economic Times,India,Business & Finance,https://economictimes.indiatimes.com/rssfeedsdefault.cms
+24.0,Business Standard,India,Business & Finance,https://www.business-standard.com/rss/home_page_top_stories.rss
+26.0,Yahoo Finance,International,Business & Finance,https://finance.yahoo.com/rss/
+28.0,MarketWatch,International,Business & Finance,https://feeds.content.dowjones.io/public/rss/mw_topstories
+29.0,Financial Times,International,Business & Finance,https://www.ft.com/rss/home
+33.0,ESPN India,India,Sports,https://www.espn.in/espn/rss/news
+34.0,Sportstar,India,Sports,https://sportstar.thehindu.com/feeder/default.rss
+35.0,Khel Now,India,Sports,https://khelnow.com/feed
+36.0,ESPN,International,Sports,https://www.espn.com/espn/rss/news
+41.0,Bollywood Hungama,India,Entertainment & Pop Culture,https://www.bollywoodhungama.com/feed/
+43.0,Pinkvilla,India,Entertainment & Pop Culture,https://www.pinkvilla.com/rss.xml
+44.0,Koimoi,India,Entertainment & Pop Culture,https://www.koimoi.com/feed/
+45.0,India Today Entertainment,India,Entertainment & Pop Culture,https://www.indiatoday.in/rss/1206550
+46.0,Variety,International,Entertainment & Pop Culture,https://variety.com/feed/
+47.0,Rolling Stone,International,Entertainment & Pop Culture,https://www.rollingstone.com/feed/
+48.0,Billboard,International,Entertainment & Pop Culture,https://www.billboard.com/feed/
+49.0,Hollywood Reporter,International,Entertainment & Pop Culture,https://www.hollywoodreporter.com/feed/
+50.0,TMZ,International,Entertainment & Pop Culture,https://www.tmz.com/rss.xml
+51.0,The Health Site,India,Health & Wellness,https://www.thehealthsite.com/feed/
+60.0,ScienceDaily Health,International,Health & Wellness,https://www.sciencedaily.com/rss/top/health.xml
+64.0,Native Planet,India,Travel & Lifestyle,https://www.nativeplanet.com/rss/feeds/news-fb.xml
+69.0,Condé Nast Traveler,International,Travel & Lifestyle,https://www.cntraveler.com/feed/rss
+70.0,Matador Network,International,Travel & Lifestyle,https://matadornetwork.com/feed/
+72.0,IndiaBioscience,India,Science & Education,https://indiabioscience.org/feed
+73.0,The Wire Science,India,Science & Education,https://science.thewire.in/feed/
+76.0,ScienceDaily,International,Science & Education,https://www.sciencedaily.com/rss/all.xml
+77.0,Nature,International,Science & Education,https://www.nature.com/nature.rss
+79.0,NASA,International,Science & Education,https://www.nasa.gov/rss/dyn/breaking_news.rss
+80.0,MIT News,International,Science & Education,https://news.mit.edu/rss/research
+81.0,Make Magazine,International,Special Interest & Hobbies,https://makezine.com/feed/
+82.0,Lifehacker,International,Special Interest & Hobbies,https://lifehacker.com/rss
+83.0,Hackaday,International,Special Interest & Hobbies,https://hackaday.com/blog/feed/
+86.0,WPBeginner,International,WordPress & Web Development,https://www.wpbeginner.com/feed/
+87.0,Smashing Magazine,International,WordPress & Web Development,https://www.smashingmagazine.com/feed/
+88.0,CSS-Tricks,International,WordPress & Web Development,https://css-tricks.com/feed/
+89.0,SitePoint,International,WordPress & Web Development,https://www.sitepoint.com/feed/
+90.0,A List Apart,International,WordPress & Web Development,https://alistapart.com/main/feed/
