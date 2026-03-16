@@ -7,6 +7,12 @@ __pycache__/
 venv/
 env/
 */.env
+.env.*
+*/.env.*
+backend/.env
+server/.env
+.env
+frontend/node_modules/
 
 # IDE
 .vscode/
@@ -25,3 +31,10 @@ package-lock.json
 
 # Logs
 *.log
+.env
+**/.env
+*.env.local
+**/.env.local
+#Models
+StrategyRecommendationModel/
+PricePredictionModel/
