@@ -9,10 +9,14 @@
 import os
 from flask import Flask, jsonify
 from dotenv import load_dotenv
+from core import cache
 from routes.rss_routes import rss_bp
 from routes.analysis_routes import analysis_bp
 
 load_dotenv()
+
+# Initialize cache database on startup
+cache.init()
 
 # ─────────────────────────────────────────────
 #  INITIALIZE FLASK APP

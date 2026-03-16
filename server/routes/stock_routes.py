@@ -129,13 +129,17 @@ def _normalize_sheets_news(raw, symbol: str) -> dict:
 
 @stock_bp.get("/stocks/<symbol>/news")
 def stock_news(symbol):
+    import re
+    # Normalize: TCS.NS and TCS → same news (strip exchange suffix)
+    symbol_clean = re.sub(r"\.(NS|BO|L|TO|AX|HK)$", "", symbol.upper())
+
     google_sheet = os.getenv("GOOGLE_SHEETS_URL")
     if google_sheet:
-        url      = f"{google_sheet}?symbol={symbol}"
+        url      = f"{google_sheet}?symbol={symbol_clean}"
         response = requests.get(url)
         if response.ok:
             print("Cache Hit")
-            return ok(_normalize_sheets_news(response.json(), symbol))
+            return ok(_normalize_sheets_news(response.json(), symbol_clean))
     print("cache Miss")
     return ok(get_news(symbol.upper(), get_realtime_stock))
 

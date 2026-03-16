@@ -1,225 +1,290 @@
-import { useState } from "react";
+// frontend/src/pages/portfolio/pages/News.jsx
+//
+// UPDATED: receives real portfolioNews from GET /api/stocks/<symbol>/news
+// (passed down from PortfolioPage — no direct API calls here)
+
 import PageHeader from "../common/PageHeader";
-import { Icon, PERSONALIZED_NEWS } from "../utils";
 
-export default function NewsPage({ holdings, watchlist }) {
-  const symbols = new Set([
-    ...holdings.map((h) => h.symbol),
-    ...watchlist.map((w) => w.symbol),
-  ]);
-  const [filter, setFilter] = useState("all");
-  const news = PERSONALIZED_NEWS.filter(
-    (n) => symbols.size === 0 || symbols.has(n.symbol),
-  );
-  const filtered =
-    filter === "all" ? news : news.filter((n) => n.sentiment === filter);
+const SENTIMENT_COLOR = {
+  Positive: "var(--green)",
+  Negative: "#f04060",
+  Neutral: "#f0a030",
+};
 
-  const sentMap = {
-    positive: "var(--green)",
-    negative: "var(--red)",
-    neutral: "var(--amber)",
-  };
-  const sentBgMap = {
-    positive: "var(--green-bg)",
-    negative: "var(--red-bg)",
-    neutral: "var(--amber-bg)",
-  };
+const SENTIMENT_BG = {
+  Positive: "var(--green-bg)",
+  Negative: "rgba(240,64,96,0.1)",
+  Neutral: "rgba(240,160,48,0.1)",
+};
+
+export default function NewsPage({
+  holdings,
+  watchlist,
+  portfolioNews, // real data: [{ symbol, news[], sentiment{} }]
+  loading,
+  onRefresh,
+}) {
+  const isEmpty = !portfolioNews || portfolioNews.length === 0;
+  const allArticles = isEmpty
+    ? []
+    : portfolioNews.flatMap((p) =>
+        (p.news || []).map((n) => ({ ...n, _symbol: p.symbol })),
+      );
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 20,
-        animation: "fadeUp .35s ease both",
-      }}
-    >
+    <div>
       <PageHeader
         iconKey="news"
-        title="Personalised News"
-        sub={`Latest news for your ${symbols.size} tracked stocks`}
+        title="Portfolio News"
+        sub={`Latest news for your top holdings · ${allArticles.length} articles`}
+        action={
+          <button
+            onClick={onRefresh}
+            style={{
+              padding: "8px 16px",
+              border: "1px solid var(--border)",
+              background: "var(--bg-section)",
+              color: "var(--text-muted)",
+              borderRadius: 6,
+              fontFamily: "var(--mono)",
+              fontSize: 10,
+              cursor: "pointer",
+              letterSpacing: "0.08em",
+            }}
+          >
+            ↻ REFRESH
+          </button>
+        }
       />
 
-      {/* Filter */}
-      <div
-        style={{
-          display: "flex",
-          gap: 4,
-          background: "var(--bg-elevated)",
-          padding: 3,
-          borderRadius: 8,
-          width: "fit-content",
-          border: "1px solid var(--border)",
-        }}
-      >
-        {[
-          ["all", "All"],
-          ["positive", "Positive"],
-          ["negative", "Negative"],
-          ["neutral", "Neutral"],
-        ].map(([v, l]) => (
-          <button
-            key={v}
-            onClick={() => setFilter(v)}
+      {/* ── Loading state ── */}
+      {loading && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "50vh",
+            gap: 16,
+          }}
+        >
+          <div className="spinner" />
+          <span
             style={{
-              padding: "6px 14px",
-              background: filter === v ? "var(--bg-card)" : "transparent",
+              fontFamily: "var(--mono)",
+              fontSize: 11,
+              color: "var(--text-muted)",
+              letterSpacing: "0.15em",
+            }}
+          >
+            LOADING NEWS...
+          </span>
+          <span
+            style={{
+              fontFamily: "var(--mono)",
+              fontSize: 10,
+              color: "var(--text-muted)",
+            }}
+          >
+            Fetching latest articles for your holdings
+          </span>
+        </div>
+      )}
+
+      {/* ── Sentiment summary bars ── */}
+      {!loading && !isEmpty && (
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            marginBottom: 24,
+            flexWrap: "wrap",
+          }}
+        >
+          {portfolioNews.map((p) => {
+            const s = p.sentiment || {};
+            return (
+              <div
+                key={p.symbol}
+                style={{
+                  flex: 1,
+                  minWidth: 160,
+                  padding: "12px 16px",
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "var(--text-primary)",
+                    marginBottom: 8,
+                  }}
+                >
+                  {p.symbol}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[
+                    { label: "POS", value: s.positive, color: "var(--green)" },
+                    { label: "NEU", value: s.neutral, color: "#f0a030" },
+                    { label: "NEG", value: s.negative, color: "#f04060" },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} style={{ textAlign: "center", flex: 1 }}>
+                      <div
+                        style={{
+                          fontFamily: "var(--mono)",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color,
+                        }}
+                      >
+                        {value != null ? `${value}%` : "—"}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: "var(--mono)",
+                          fontSize: 8,
+                          color: "var(--text-muted)",
+                          letterSpacing: "0.1em",
+                        }}
+                      >
+                        {label}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Empty / loading state ── */}
+      {!loading && isEmpty && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "40vh",
+            gap: 16,
+          }}
+        >
+          <span style={{ fontSize: 32 }}>📰</span>
+          <span
+            style={{
+              fontFamily: "var(--mono)",
+              fontSize: 12,
+              color: "var(--text-muted)",
+            }}
+          >
+            No news loaded yet
+          </span>
+          <button
+            onClick={onRefresh}
+            style={{
+              padding: "8px 20px",
+              background: "var(--green)",
+              color: "#000",
               border: "none",
               borderRadius: 6,
-              color: filter === v ? "var(--text-primary)" : "var(--text-muted)",
               fontFamily: "var(--mono)",
               fontSize: 11,
               cursor: "pointer",
               letterSpacing: "0.08em",
-              transition: "all .15s",
             }}
           >
-            {l}
+            LOAD NEWS
           </button>
-        ))}
-      </div>
-
-      {symbols.size === 0 && (
-        <div
-          style={{
-            padding: "14px 18px",
-            background: "var(--amber-bg)",
-            border: "1px solid var(--amber)",
-            borderRadius: 10,
-            fontSize: 12,
-            color: "var(--amber)",
-            fontFamily: "var(--mono)",
-          }}
-        >
-          ⚡ Add holdings or a watchlist to see personalised news.
         </div>
       )}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))",
-          gap: 14,
-        }}
-      >
-        {filtered.map((n, i) => (
-          <div
-            key={n.id}
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border)",
-              borderRadius: 12,
-              padding: 20,
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-              cursor: "pointer",
-              animation: `fadeUp .4s ease both`,
-              animationDelay: `${i * 0.05}s`,
-              transition: "border-color .15s, transform .15s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = "var(--border-light)";
-              e.currentTarget.style.transform = "translateY(-2px)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = "var(--border)";
-              e.currentTarget.style.transform = "none";
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                gap: 6,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <span
+      {/* ── Articles feed (2-column grid) ── */}
+      {!loading && !isEmpty && (
+        <div className="news-grid">
+          {allArticles.map((article, i) => {
+            const sentiment = article.sentiment || "Neutral";
+            const isHighImpact = (article.tags || []).some((t) =>
+              t.includes("high"),
+            );
+
+            return (
+              <a
+                key={i}
+                href={article.url || "#"}
+                target="_blank"
+                rel="noreferrer"
+                className="news-card"
                 style={{
-                  fontSize: 9,
-                  padding: "2px 9px",
-                  borderRadius: 20,
-                  fontFamily: "var(--mono)",
-                  fontWeight: 700,
-                  letterSpacing: "0.1em",
-                  background: sentBgMap[n.sentiment],
-                  color: sentMap[n.sentiment],
-                  border: `1px solid ${sentMap[n.sentiment]}`,
+                  animation: `fadeUp .3s ease both`,
+                  animationDelay: `${i * 0.04}s`,
                 }}
               >
-                {n.sentiment.toUpperCase()}
-              </span>
-              <span
-                style={{
-                  fontSize: 9,
-                  padding: "2px 9px",
-                  borderRadius: 20,
-                  fontFamily: "var(--mono)",
-                  background: "var(--blue-bg)",
-                  color: "var(--blue)",
-                  border: "1px solid var(--blue)",
-                }}
-              >
-                {n.symbol}
-              </span>
-            </div>
+                <div className="news-tags">
+                  <span
+                    className="ntag"
+                    style={{
+                      background: "var(--blue-bg)",
+                      color: "var(--blue)",
+                      border: "1px solid var(--blue)",
+                    }}
+                  >
+                    {article._symbol}
+                  </span>
+                  <span
+                    className={`ntag ntag-${
+                      sentiment === "Positive"
+                        ? "pos"
+                        : sentiment === "Negative"
+                          ? "neg"
+                          : "neu"
+                    }`}
+                  >
+                    {sentiment.toUpperCase()}
+                  </span>
+                  {isHighImpact && (
+                    <span className="ntag ntag-hot">High Impact</span>
+                  )}
+                </div>
 
-            <h3
-              style={{
-                fontFamily: "var(--serif)",
-                fontSize: 14,
-                fontWeight: 600,
-                color: "var(--text-primary)",
-                lineHeight: 1.45,
-                margin: 0,
-              }}
-            >
-              {n.title}
-            </h3>
+                <h4 className="news-title">{article.title}</h4>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: 10,
-                color: "var(--text-muted)",
-                fontFamily: "var(--mono)",
-              }}
-            >
-              <span>{n.source}</span>
-              <span>{n.time}</span>
-            </div>
+                {article.summary && (
+                  <p className="news-summary">
+                    {article.summary.slice(0, 150)}
+                    {article.summary.length > 150 ? "…" : ""}
+                  </p>
+                )}
 
-            <p
-              style={{
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                lineHeight: 1.6,
-                margin: 0,
-              }}
-            >
-              {n.summary}
-            </p>
-          </div>
-        ))}
-
-        {filtered.length === 0 && (
-          <div
-            style={{
-              gridColumn: "1/-1",
-              textAlign: "center",
-              padding: "40px 20px",
-              color: "var(--text-muted)",
-              fontSize: 13,
-              border: "1px dashed var(--border)",
-              borderRadius: 12,
-            }}
-          >
-            No {filter} news found for your holdings.
-          </div>
-        )}
-      </div>
+                <div className="news-meta mono">
+                  <span>{article.source}</span>
+                  {article.publishedAt && (
+                    <span>
+                      {new Date(article.publishedAt).toLocaleDateString(
+                        "en-IN",
+                        {
+                          day: "numeric",
+                          month: "short",
+                        },
+                      )}
+                    </span>
+                  )}
+                  {article.confidence != null && (
+                    <span style={{ color: SENTIMENT_COLOR[sentiment] }}>
+                      {(article.confidence * 100).toFixed(0)}% confidence
+                    </span>
+                  )}
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

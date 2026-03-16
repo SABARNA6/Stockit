@@ -141,16 +141,16 @@ export default function UserMenu({ onNavigatePortfolio }) {
                 onNavigatePortfolio?.();
               },
             },
-            {
-              icon: <User size={14} />,
-              label: "Profile",
-              sub: "Account settings",
-              color: "var(--blue)",
-              action: () => {
-                setOpen(false);
-                alert("Profile settings — wire to your /profile route");
-              },
-            },
+            // {
+            //   icon: <User size={14} />,
+            //   label: "Profile",
+            //   sub: "Account settings",
+            //   color: "var(--blue)",
+            //   action: () => {
+            //     setOpen(false);
+            //     alert("Profile settings — wire to your /profile route");
+            //   },
+            // },
           ].map((item) => (
             <button
               key={item.label}

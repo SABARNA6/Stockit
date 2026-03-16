@@ -41,5 +41,91 @@
       "AI disruption to services",
       "client concentration"
     ]
+  },
+  {
+    "symbol": "INFY",
+    "name": "Infosys Limited",
+    "sector": "IT",
+    "industry": "Information Technology Services",
+    "priority": 1,
+    "peers": [
+      "TCS",
+      "Wipro",
+      "HCL Technologies",
+      "Tech Mahindra",
+      "LTIMindtree"
+    ],
+    "revenue_exposure": "~80% USD revenue; strong in banking and financial services (~30%), retail, and energy verticals",
+    "risks": [
+      "US IT spending slowdown",
+      "BFSI sector slowdown",
+      "USD/INR exchange rate",
+      "visa policy changes",
+      "talent attrition"
+    ]
+  },
+  {
+    "symbol": "RELIANCE",
+    "name": "Reliance Industries Limited",
+    "sector": "energy",
+    "industry": "Oil & Gas Refining & Marketing",
+    "priority": 1,
+    "peers": [
+      "ONGC",
+      "IOC",
+      "BPCL",
+      "Adani Enterprises"
+    ],
+    "revenue_exposure": "O2C (~40%), Retail (~30%), Jio (~20%), E&P (~5%); partially USD-linked via refining",
+    "risks": [
+      "crude oil price volatility",
+      "refining margin compression",
+      "Jio competition",
+      "retail capex cycle",
+      "regulatory risk"
+    ]
+  },
+  {
+    "symbol": "LICI",
+    "name": "Life Insurance Corporation of India",
+    "sector": "banking",
+    "industry": "Insurance - Life",
+    "priority": 1,
+    "peers": [
+      "HDFC Life",
+      "SBI Life",
+      "ICICI Prudential",
+      "Max Life"
+    ],
+    "revenue_exposure": "Domestic INR-denominated lending and deposits; limited direct FX exposure",
+    "risks": [
+      "RBI monetary policy",
+      "NPA and credit quality",
+      "credit growth slowdown",
+      "FII outflows",
+      "fintech competition"
+    ]
+  },
+  {
+    "symbol": "BEL",
+    "name": "Bharat Electronics Limited",
+    "sector": "capital_goods",
+    "industry": "Aerospace & Defense",
+    "priority": 1,
+    "peers": [
+      "HAL",
+      "BDL",
+      "DATAPATTNS",
+      "PARAS",
+      "ZENTEC"
+    ],
+    "revenue_exposure": "~90-95% revenue from Indian Ministry of Defence orders (INR-denominated); ~2-5% exports to friendly nations (USD/EUR); import dependency for semiconductors, RF components, and specialized electronics",
+    "risks": [
+      "MoD budget allocation delays",
+      "order execution timeline risk",
+      "import dependency for semiconductors",
+      "geopolitical supply chain disruption",
+      "pricing pressure from government contracts"
+    ]
   }
 ]

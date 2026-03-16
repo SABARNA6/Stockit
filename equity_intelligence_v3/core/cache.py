@@ -1,11 +1,16 @@
 import sqlite3
 import json
 import hashlib
+import os
 from datetime import datetime, timedelta
 from config.config import DB_PATH, TTL, MARKET_OPEN, MARKET_CLOSE
 
 
 def _conn():
+    # Ensure the database directory exists inside containers and local runs.
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     c = sqlite3.connect(DB_PATH)
     c.row_factory = sqlite3.Row
     return c
