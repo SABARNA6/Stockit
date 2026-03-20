@@ -39,9 +39,10 @@ _recommendation_client = None
 # Small in-memory cache for search suggestions.
 _SEARCH_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _SEARCH_CACHE_TTL_SECONDS = 120
+_SEARCH_CACHE_EVICT_INTERVAL_SECONDS = 60
+_SEARCH_CACHE_LAST_EVICT_TS = 0.0
 _SEARCH_ALIASES = {
     "HDFCBANK": "HDFC BANK",
-    "HDFC": "HDFC BANK",
     "RIL": "RELIANCE",
     "SBIN": "STATE BANK OF INDIA",
     "LT": "LARSEN TOUBRO",
@@ -112,8 +113,45 @@ def _cache_get_search(key: str) -> list[dict] | None:
     return data
 
 
+def _cache_evict_stale(now_ts: float | None = None) -> int:
+    now = now_ts if now_ts is not None else datetime.now(timezone.utc).timestamp()
+    stale_keys = [
+        k for k, (ts, _) in _SEARCH_CACHE.items()
+        if now - ts > _SEARCH_CACHE_TTL_SECONDS
+    ]
+    for k in stale_keys:
+        _SEARCH_CACHE.pop(k, None)
+    return len(stale_keys)
+
+
 def _cache_set_search(key: str, data: list[dict]) -> None:
-    _SEARCH_CACHE[key] = (datetime.now(timezone.utc).timestamp(), data)
+    global _SEARCH_CACHE_LAST_EVICT_TS
+    now = datetime.now(timezone.utc).timestamp()
+    if now - _SEARCH_CACHE_LAST_EVICT_TS >= _SEARCH_CACHE_EVICT_INTERVAL_SECONDS:
+        _cache_evict_stale(now)
+        _SEARCH_CACHE_LAST_EVICT_TS = now
+    _SEARCH_CACHE[key] = (now, data)
+
+
+def clear_search_cache(prefix: str | None = None) -> int:
+    if not _SEARCH_CACHE:
+        return 0
+    if not prefix:
+        removed = len(_SEARCH_CACHE)
+        _SEARCH_CACHE.clear()
+        return removed
+
+    normalized_prefix = _normalize_search_text(prefix)
+    if not normalized_prefix:
+        return 0
+
+    keys_to_remove = [
+        k for k in _SEARCH_CACHE
+        if k.startswith(normalized_prefix) or k.startswith(f"{normalized_prefix}:")
+    ]
+    for k in keys_to_remove:
+        _SEARCH_CACHE.pop(k, None)
+    return len(keys_to_remove)
 
 
 def _normalize_search_text(text: str) -> str:
@@ -225,13 +263,138 @@ def _resolve_company_name(symbol: str, exchange: str, current_name: str) -> str:
 
 
 def _enrich_search_names(items: list[dict]) -> list[dict]:
+    enriched: list[dict] = []
     for item in items:
-        symbol = item.get("symbol")
-        exchange = item.get("exchange", "NSE")
-        name = item.get("name")
-        resolved = _resolve_company_name(symbol, exchange, name)
-        item["name"] = resolved
-    return items
+        next_item = dict(item)
+        symbol = str(next_item.get("symbol") or "")
+        exchange = next_item.get("exchange", "NSE")
+        current_name = str(next_item.get("name") or "").strip()
+
+        symbol_norm = _normalize_search_text(_symbol_base(symbol))
+        current_name_norm = _normalize_search_text(current_name)
+
+        # Keep already good names to avoid freezing bad/empty enrichment attempts.
+        if current_name and current_name_norm and current_name_norm != symbol_norm:
+            enriched.append(next_item)
+            continue
+
+        resolved = _resolve_company_name(symbol, exchange, current_name)
+        resolved_norm = _normalize_search_text(resolved)
+        if resolved and resolved_norm and resolved_norm != symbol_norm:
+            next_item["name"] = resolved
+        elif current_name:
+            next_item["name"] = current_name
+        else:
+            next_item["name"] = symbol
+
+        enriched.append(next_item)
+
+    return enriched
+
+
+def _yahoo_search(expanded_query: str, normalized_query: str, max_items: int) -> list[dict]:
+    results: list[dict] = []
+    try:
+        resp = requests.get(
+            "https://query2.finance.yahoo.com/v1/finance/search",
+            params={"q": expanded_query, "quotesCount": max_items * 3, "newsCount": 0},
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+            timeout=3,
+        )
+        if not resp.ok:
+            return []
+
+        raw_quotes = resp.json().get("quotes", []) or []
+        ranked = []
+        for q in raw_quotes:
+            if q.get("quoteType") != "EQUITY":
+                continue
+
+            raw_symbol = str(q.get("symbol") or "").strip().upper()
+            if not raw_symbol:
+                continue
+
+            # Hard-filter non-Indian listings from Yahoo global search.
+            if not (raw_symbol.endswith(".NS") or raw_symbol.endswith(".BO")):
+                continue
+
+            base_symbol = raw_symbol.replace(".NS", "").replace(".BO", "")
+            name = q.get("longname") or q.get("shortname") or ""
+            exch = (q.get("exchDisp") or q.get("exchange") or "").upper()
+
+            if "NSE" in exch or "NSI" in exch or raw_symbol.endswith(".NS"):
+                exchange = "NSE"
+            elif "BSE" in exch or raw_symbol.endswith(".BO"):
+                exchange = "BSE"
+            else:
+                continue
+
+            normalized_symbol = _normalize_search_text(base_symbol)
+            normalized_name = _normalize_search_text(name)
+
+            score = 0
+            matched_on = "fallback"
+            if normalized_symbol == normalized_query:
+                score = 140
+                matched_on = "symbol_exact"
+            elif normalized_name == normalized_query:
+                score = 125
+                matched_on = "name_exact"
+            elif normalized_symbol.startswith(normalized_query):
+                score = 100
+                matched_on = "symbol_prefix"
+            elif normalized_name.startswith(normalized_query):
+                score = 85
+                matched_on = "name_prefix"
+            elif normalized_query in normalized_name:
+                score = 75
+                matched_on = "name_contains"
+            elif normalized_query in normalized_symbol:
+                score = 70
+                matched_on = "symbol_contains"
+            else:
+                fuzzy_name = _fuzzy_ratio(normalized_query, normalized_name)
+                fuzzy_symbol = _fuzzy_ratio(normalized_query, normalized_symbol)
+                fuzzy_best = max(fuzzy_name, fuzzy_symbol)
+                if fuzzy_best < 70:
+                    continue
+                score = 45 + fuzzy_best // 2
+                matched_on = "fuzzy_name" if fuzzy_name >= fuzzy_symbol else "fuzzy_symbol"
+
+            if exchange == "NSE":
+                score += 15
+            elif exchange == "BSE":
+                score += 10
+
+            ranked.append((score, {
+                "symbol": base_symbol,
+                "name": name,
+                "exchange": exchange,
+                "sector": None,
+                "industry": None,
+                "score": score,
+                "matchedOn": matched_on,
+                "highlight": {
+                    "symbol": _build_highlight_map(base_symbol, normalized_query),
+                    "name": _build_highlight_map(name, normalized_query),
+                },
+            }))
+
+        ranked.sort(key=lambda item: (-item[0], item[1]["symbol"]))
+
+        seen = set()
+        for _, item in ranked:
+            key = (item["symbol"], item["exchange"])
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(item)
+            if len(results) >= max_items:
+                break
+    except Exception as e:
+        print(f"[_yahoo_search] failed for {expanded_query}: {e}")
+
+    return results
 
 
 def _build_highlight_map(text: str, query: str) -> dict | None:
@@ -1269,7 +1432,7 @@ def search_company(symbol: str, limit: int = 10) -> dict:
     if not query:
         return {"error": "Symbol parameter is required"}
 
-    expanded_query = _SEARCH_ALIASES.get(query, query)
+    expanded_query = query
     normalized_query = _normalize_search_text(expanded_query)
 
     max_items = max(1, min(int(limit or 10), 20))
@@ -1320,101 +1483,11 @@ def search_company(symbol: str, limit: int = 10) -> dict:
                 break
 
     # Fast prefix/partial lookup via Yahoo search endpoint.
-    try:
-        resp = requests.get(
-            "https://query2.finance.yahoo.com/v1/finance/search",
-            params={"q": expanded_query, "quotesCount": max_items * 3, "newsCount": 0},
-            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
-            timeout=3,
-        )
-        if resp.ok:
-            raw_quotes = resp.json().get("quotes", []) or []
-            ranked = []
-            for q in raw_quotes:
-                if q.get("quoteType") != "EQUITY":
-                    continue
-
-                raw_symbol = str(q.get("symbol") or "").strip().upper()
-                if not raw_symbol:
-                    continue
-
-                base_symbol = raw_symbol.replace(".NS", "").replace(".BO", "")
-                name = q.get("longname") or q.get("shortname") or ""
-                exch = (q.get("exchDisp") or q.get("exchange") or "").upper()
-
-                if "NSE" in exch or "NSI" in exch or raw_symbol.endswith(".NS"):
-                    exchange = "NSE"
-                elif "BSE" in exch or raw_symbol.endswith(".BO"):
-                    exchange = "BSE"
-                else:
-                    exchange = exch[:12] if exch else "UNKNOWN"
-
-                name_upper = str(name).upper()
-                normalized_symbol = _normalize_search_text(base_symbol)
-                normalized_name = _normalize_search_text(name_upper)
-
-                score = 0
-                matched_on = "fallback"
-                if normalized_symbol == normalized_query:
-                    score = 140
-                    matched_on = "symbol_exact"
-                elif normalized_name == normalized_query:
-                    score = 125
-                    matched_on = "name_exact"
-                elif normalized_symbol.startswith(normalized_query):
-                    score = 100
-                    matched_on = "symbol_prefix"
-                elif normalized_name.startswith(normalized_query):
-                    score = 85
-                    matched_on = "name_prefix"
-                elif normalized_query in normalized_name:
-                    score = 75
-                    matched_on = "name_contains"
-                elif normalized_query in normalized_symbol:
-                    score = 70
-                    matched_on = "symbol_contains"
-                else:
-                    fuzzy_name = _fuzzy_ratio(normalized_query, normalized_name)
-                    fuzzy_symbol = _fuzzy_ratio(normalized_query, normalized_symbol)
-                    fuzzy_best = max(fuzzy_name, fuzzy_symbol)
-                    if fuzzy_best >= 70:
-                        score = 45 + fuzzy_best // 2
-                        matched_on = "fuzzy_name" if fuzzy_name >= fuzzy_symbol else "fuzzy_symbol"
-                    else:
-                        continue
-
-                if exchange in ("NSE", "BSE"):
-                    score += 10
-
-                ranked.append((score, {
-                    "symbol": base_symbol,
-                    "name": name,
-                    "exchange": exchange,
-                    "sector": None,
-                    "industry": None,
-                    "score": score,
-                    "matchedOn": matched_on,
-                    "highlight": {
-                        "symbol": _build_highlight_map(base_symbol, normalized_query),
-                        "name": _build_highlight_map(name, normalized_query),
-                    },
-                }))
-
-            ranked.sort(key=lambda item: (-item[0], item[1]["symbol"]))
-
-            seen = set()
-            for _, item in ranked:
-                key = (item["symbol"], item["exchange"])
-                if key in seen:
-                    continue
-                seen.add(key)
-                results.append(item)
-                if len(results) >= max_items:
-                    break
-        else:
-            print(f"[search_company] yahoo search non-ok for {query}: HTTP {resp.status_code}")
-    except Exception as e:
-        print(f"[search_company] yahoo search failed for {query}: {e}")
+    yahoo_results = _yahoo_search(expanded_query, normalized_query, max_items)
+    for item in yahoo_results:
+        results.append(item)
+        if len(results) >= max_items:
+            break
 
     # Fallback exact lookup so symbol validation still works even if search API is down.
     if not results:
