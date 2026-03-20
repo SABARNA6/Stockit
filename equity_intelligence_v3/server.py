@@ -33,24 +33,10 @@ app.register_blueprint(analysis_bp)
 # ─────────────────────────────────────────────
 @app.route("/", methods=["GET"])
 def home():
-    """Health check and API documentation."""
+    """Minimal health check response."""
     return jsonify({
         "service": "Equity Intelligence v3",
-        "version": "1.0",
-        "status": "running",
-        "endpoints": {
-            "health": "GET /",
-            "rss": {
-                "trigger_fetch": "GET|POST /api/rss/trigger",
-                "status": "GET /api/rss/status",
-            },
-            "analysis": {
-                "stock_analysis": "GET /api/analyze/<symbol>?hours_back=24",
-                "api_limits": "GET /api/limits",
-                "equities_sync": "GET|POST /api/equities/sync",
-            }
-        },
-        "documentation": "See /api/rss/status, /api/analyze/<symbol>, /api/limits, /api/equities/sync"
+        "status": "running"
     }), 200
 
 
@@ -64,7 +50,7 @@ def not_found(error):
 
 @app.errorhandler(500)
 def server_error(error):
-    return jsonify({"error": "Internal server error", "message": str(error)}), 500
+    return jsonify({"error": "Internal server error"}), 500
 
 
 # ─────────────────────────────────────────────

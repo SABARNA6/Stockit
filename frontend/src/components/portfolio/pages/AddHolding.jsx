@@ -1,17 +1,26 @@
-// frontend/src/pages/portfolio/pages/AddHolding.jsx
+// frontend/src/components/portfolio/pages/AddHolding.jsx
 //
-// CHANGE FROM ORIGINAL: only 2 lines changed
-//   BEFORE: await supabase.from("portfolio").insert(data)
-//   AFTER:  await apiFetch("/portfolio", { method: "POST", body: JSON.stringify(data) })
-//
-// Everything else — UI, tabs, CSV parser, multi-row grid, file upload — is identical.
+// Add Holding now validates symbols before save and normalizes
+// formats such as TCS.NS / NSE:TCS to TCS.
 
 import { useState, useRef } from "react";
 import { supabase } from "../../../supabaseClient";
 import PageHeader from "../common/PageHeader";
 import { Icon } from "../utils";
 
-const API = window.STOCK_API_BASE || "http://localhost:10000/api";
+const API = window.STOCK_API_BASE || "/api";
+
+const EXCHANGE_SUFFIX_RE = /\.(NS|BO)$/i;
+
+function normalizeSymbol(raw) {
+  const input = String(raw || "")
+    .trim()
+    .toUpperCase();
+  if (!input) return "";
+  // Accept forms like NSE:TCS / BSE:TCS and normalize to plain ticker.
+  const noPrefix = input.includes(":") ? input.split(":").pop() : input;
+  return noPrefix.replace(/\s+/g, "").replace(EXCHANGE_SUFFIX_RE, "");
+}
 
 // ── Auth header from current Supabase session ─────────────────────────────
 async function authHeaders() {
@@ -59,12 +68,36 @@ export default function AddHoldingPage({ userId, onSaved }) {
       .map((l) => {
         const [symbol, qty, avg_cost] = l.split(",").map((s) => s.trim());
         return {
-          symbol: symbol?.toUpperCase(),
+          symbol: normalizeSymbol(symbol),
           qty: parseFloat(qty),
           avg_cost: parseFloat(avg_cost),
         };
       })
       .filter((r) => r.symbol && !isNaN(r.qty) && !isNaN(r.avg_cost));
+  };
+
+  const validateEquities = async (rowsToValidate) => {
+    const uniqueSymbols = [...new Set(rowsToValidate.map((r) => r.symbol))];
+    const checks = await Promise.all(
+      uniqueSymbols.map(async (symbol) => {
+        try {
+          const res = await apiFetch(
+            `/company/search?symbol=${encodeURIComponent(symbol)}`,
+          );
+          const exists = Array.isArray(res?.data) && res.data.length > 0;
+          return { symbol, exists };
+        } catch {
+          return { symbol, exists: false };
+        }
+      }),
+    );
+
+    const invalid = checks.filter((c) => !c.exists).map((c) => c.symbol);
+    if (invalid.length) {
+      throw new Error(
+        `Invalid equity symbol(s): ${invalid.join(", ")}. Use valid tickers like TCS or RELIANCE.`,
+      );
+    }
   };
 
   const handleSave = async () => {
@@ -77,7 +110,7 @@ export default function AddHoldingPage({ userId, onSaved }) {
           ? rows
               .filter((r) => r.symbol && r.qty && r.avg_cost)
               .map((r) => ({
-                symbol: r.symbol.toUpperCase(),
+                symbol: normalizeSymbol(r.symbol),
                 qty: parseFloat(r.qty),
                 avg_cost: parseFloat(r.avg_cost),
               }))
@@ -85,6 +118,13 @@ export default function AddHoldingPage({ userId, onSaved }) {
 
       if (!data.length)
         throw new Error("Nothing to save. Fill at least one row.");
+
+      const invalidNumbers = data.filter((r) => r.qty <= 0 || r.avg_cost <= 0);
+      if (invalidNumbers.length) {
+        throw new Error("Qty and Avg Cost must be greater than 0.");
+      }
+
+      await validateEquities(data);
 
       // ── ONLY CHANGE: Flask API instead of supabase.from("portfolio").insert() ──
       await apiFetch("/portfolio", {

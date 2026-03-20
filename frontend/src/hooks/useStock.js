@@ -13,7 +13,66 @@ const TTL = {
   fundamentals: 3_600_000,
   news: 900_000,
   historical: 300_000,
+  search: 120_000,
 };
+
+const RECENT_SEARCH_KEY = "stockit.recentSearches.v1";
+const RECENT_SEARCH_LIMIT = 5;
+const POPULAR_SUGGESTIONS = [
+  {
+    symbol: "RELIANCE",
+    name: "Reliance Industries Ltd",
+    exchange: "NSE",
+    matchedOn: "popular",
+  },
+  {
+    symbol: "TCS",
+    name: "Tata Consultancy Services Ltd",
+    exchange: "NSE",
+    matchedOn: "popular",
+  },
+  {
+    symbol: "INFY",
+    name: "Infosys Ltd",
+    exchange: "NSE",
+    matchedOn: "popular",
+  },
+  {
+    symbol: "HDFCBANK",
+    name: "HDFC Bank Ltd",
+    exchange: "NSE",
+    matchedOn: "popular",
+  },
+  {
+    symbol: "ICICIBANK",
+    name: "ICICI Bank Ltd",
+    exchange: "NSE",
+    matchedOn: "popular",
+  },
+];
+
+function readRecentSearches() {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(RECENT_SEARCH_KEY);
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeRecentSearches(items) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      RECENT_SEARCH_KEY,
+      JSON.stringify(items.slice(0, RECENT_SEARCH_LIMIT)),
+    );
+  } catch {
+    // Ignore storage failures in private mode/strict browsers.
+  }
+}
 
 function cached(key, ttl, fn) {
   const hit = CACHE[key];
@@ -273,26 +332,98 @@ export function useSearch() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [recent, setRecent] = useState(() => readRecentSearches());
   const timer = useRef(null);
+  const requestSeq = useRef(0);
 
-  const search = useCallback((q) => {
-    setQuery(q);
-    clearTimeout(timer.current);
-    if (!q || q.length < 2) {
-      setResults([]);
-      return;
+  const emptySuggestions = useCallback(() => {
+    const seen = new Set();
+    const merged = [];
+    for (const item of [...recent, ...POPULAR_SUGGESTIONS]) {
+      const key = `${item.symbol}:${item.exchange || ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
     }
-    timer.current = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const r = await stockApi.search(q.toUpperCase());
-        setResults(r.data || []);
-      } catch {
-        setResults([]);
-      }
-      setLoading(false);
-    }, 350);
+    return merged.slice(0, 8);
+  }, [recent]);
+
+  const addRecentSearch = useCallback((item) => {
+    const symbol = String(item?.symbol || "")
+      .trim()
+      .toUpperCase();
+    if (!symbol) return;
+
+    const normalized = {
+      symbol,
+      name: item?.name || symbol,
+      exchange: item?.exchange || "NSE",
+      matchedOn: "recent",
+    };
+
+    setRecent((prev) => {
+      const next = [
+        normalized,
+        ...prev.filter(
+          (entry) => String(entry?.symbol || "").toUpperCase() !== symbol,
+        ),
+      ].slice(0, RECENT_SEARCH_LIMIT);
+      writeRecentSearches(next);
+      return next;
+    });
   }, []);
 
-  return { query, results, loading, search };
+  useEffect(() => {
+    setResults(emptySuggestions());
+  }, [emptySuggestions]);
+
+  useEffect(() => {
+    return () => clearTimeout(timer.current);
+  }, []);
+
+  const search = useCallback(
+    (q) => {
+      setQuery(q);
+      clearTimeout(timer.current);
+
+      const normalized = String(q || "")
+        .trim()
+        .toUpperCase();
+      if (!normalized || normalized.length < 2) {
+        setResults(emptySuggestions());
+        setLoading(false);
+        return;
+      }
+
+      const cacheKey = `search:${normalized}`;
+      const hit = CACHE[cacheKey];
+      if (hit && Date.now() - hit.ts < TTL.search) {
+        setResults(hit.data || []);
+        setLoading(false);
+        return;
+      }
+
+      timer.current = setTimeout(async () => {
+        const currentRequest = ++requestSeq.current;
+        setLoading(true);
+        try {
+          const r = await stockApi.search(normalized, 10);
+          if (currentRequest !== requestSeq.current) return;
+          const nextResults = r.data || [];
+          CACHE[cacheKey] = { data: nextResults, ts: Date.now() };
+          setResults(nextResults);
+        } catch {
+          if (currentRequest !== requestSeq.current) return;
+          setResults([]);
+        } finally {
+          if (currentRequest === requestSeq.current) {
+            setLoading(false);
+          }
+        }
+      }, 350);
+    },
+    [emptySuggestions],
+  );
+
+  return { query, results, loading, search, addRecentSearch };
 }

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNews } from "../hooks/useStock";
 import { fmt } from "../api/stockApi";
 
-const API = window.STOCK_API_BASE || "http://localhost:10000/api";
+const API = window.STOCK_API_BASE || "/api";
 const FILTERS = ["All", "Positive", "Negative", "Neutral"];
 
 // ─────────────────────────────────────────────────────────────────────────────

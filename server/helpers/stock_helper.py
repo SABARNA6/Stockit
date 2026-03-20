@@ -15,6 +15,8 @@ from __future__ import annotations
 import os
 import json
 import math
+import re
+from difflib import SequenceMatcher
 import requests
 import yfinance as yf
 from datetime import datetime, timezone, timedelta
@@ -33,6 +35,35 @@ _finbert_client      = None
 _price_client        = None
 _strategy_client     = None
 _recommendation_client = None
+
+# Small in-memory cache for search suggestions.
+_SEARCH_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_SEARCH_CACHE_TTL_SECONDS = 120
+_SEARCH_ALIASES = {
+    "HDFCBANK": "HDFC BANK",
+    "HDFC": "HDFC BANK",
+    "RIL": "RELIANCE",
+    "SBIN": "STATE BANK OF INDIA",
+    "LT": "LARSEN TOUBRO",
+}
+
+_SEARCH_FALLBACK_UNIVERSE = [
+    {"symbol": "RELIANCE", "name": "Reliance Industries Ltd", "exchange": "NSE"},
+    {"symbol": "TCS", "name": "Tata Consultancy Services Ltd", "exchange": "NSE"},
+    {"symbol": "INFY", "name": "Infosys Ltd", "exchange": "NSE"},
+    {"symbol": "HDFCBANK", "name": "HDFC Bank Ltd", "exchange": "NSE"},
+    {"symbol": "ICICIBANK", "name": "ICICI Bank Ltd", "exchange": "NSE"},
+    {"symbol": "SBIN", "name": "State Bank of India", "exchange": "NSE"},
+    {"symbol": "LT", "name": "Larsen and Toubro Ltd", "exchange": "NSE"},
+    {"symbol": "BHARTIARTL", "name": "Bharti Airtel Ltd", "exchange": "NSE"},
+    {"symbol": "ITC", "name": "ITC Ltd", "exchange": "NSE"},
+    {"symbol": "HINDUNILVR", "name": "Hindustan Unilever Ltd", "exchange": "NSE"},
+]
+
+_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+_NSE_SYMBOL_CACHE_FILE = os.path.join(_DATA_DIR, "nse_symbols_cache.json")
+_NSE_SYMBOLS: set[str] = set()
+_COMPANY_NAME_CACHE: dict[str, str] = {}
 
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
@@ -67,6 +98,158 @@ def _safe_int(val, default=None):
         return int(val)
     except (TypeError, ValueError):
         return default
+
+
+def _cache_get_search(key: str) -> list[dict] | None:
+    now = datetime.now(timezone.utc).timestamp()
+    hit = _SEARCH_CACHE.get(key)
+    if not hit:
+        return None
+    ts, data = hit
+    if now - ts > _SEARCH_CACHE_TTL_SECONDS:
+        _SEARCH_CACHE.pop(key, None)
+        return None
+    return data
+
+
+def _cache_set_search(key: str, data: list[dict]) -> None:
+    _SEARCH_CACHE[key] = (datetime.now(timezone.utc).timestamp(), data)
+
+
+def _normalize_search_text(text: str) -> str:
+    return re.sub(r"[^A-Z0-9]+", " ", str(text or "").upper()).strip()
+
+
+def _symbol_base(symbol: str) -> str:
+    s = str(symbol or "").strip().upper()
+    return s.replace(".NS", "").replace(".BO", "")
+
+
+def _read_nse_symbol_cache_file() -> set[str]:
+    try:
+        if not os.path.exists(_NSE_SYMBOL_CACHE_FILE):
+            return set()
+        with open(_NSE_SYMBOL_CACHE_FILE, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        symbols = payload.get("symbols", []) if isinstance(payload, dict) else []
+        return {str(s).strip().upper() for s in symbols if str(s).strip()}
+    except Exception as e:
+        print(f"[_read_nse_symbol_cache_file] {e}")
+        return set()
+
+
+def _write_nse_symbol_cache_file(symbols: set[str]) -> None:
+    try:
+        os.makedirs(_DATA_DIR, exist_ok=True)
+        payload = {
+            "updatedAt": datetime.utcnow().isoformat(),
+            "count": len(symbols),
+            "symbols": sorted(symbols),
+        }
+        with open(_NSE_SYMBOL_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+    except Exception as e:
+        print(f"[_write_nse_symbol_cache_file] {e}")
+
+
+def refresh_local_nse_symbol_cache() -> int:
+    """Fetch NSE symbols once and persist locally for fast validation/search."""
+    global _NSE_SYMBOLS
+    if not _NSE_AVAILABLE:
+        return len(_NSE_SYMBOLS)
+
+    try:
+        symbols = nse.nse_eq_symbols()
+        normalized = {str(s).strip().upper() for s in symbols if str(s).strip()}
+        if normalized:
+            _NSE_SYMBOLS = normalized
+            _write_nse_symbol_cache_file(_NSE_SYMBOLS)
+    except Exception as e:
+        print(f"[refresh_local_nse_symbol_cache] {e}")
+
+    return len(_NSE_SYMBOLS)
+
+
+def is_nse_symbol_present(symbol: str) -> bool:
+    base = _symbol_base(symbol)
+    if not base:
+        return False
+    if _NSE_SYMBOLS:
+        return base in _NSE_SYMBOLS
+    return True
+
+
+# Warm local symbol cache on startup.
+_NSE_SYMBOLS = _read_nse_symbol_cache_file()
+if not _NSE_SYMBOLS:
+    refresh_local_nse_symbol_cache()
+
+
+def _fuzzy_ratio(a: str, b: str) -> int:
+    if not a or not b:
+        return 0
+    return int(SequenceMatcher(None, a, b).ratio() * 100)
+
+
+def _resolve_company_name(symbol: str, exchange: str, current_name: str) -> str:
+    """If current name looks like the symbol, try yfinance longName/shortName."""
+    symbol_clean = _symbol_base(symbol)
+    if not symbol_clean:
+        return current_name or symbol
+
+    current_norm = _normalize_search_text(current_name)
+    symbol_norm = _normalize_search_text(symbol_clean)
+    if current_norm and current_norm != symbol_norm:
+        return current_name
+
+    cache_key = f"{symbol_clean}:{str(exchange or 'NSE').upper()}"
+    cached_name = _COMPANY_NAME_CACHE.get(cache_key)
+    if cached_name:
+        return cached_name
+
+    suffix = ".BO" if str(exchange or "").upper() == "BSE" else ".NS"
+    candidate_symbols = [f"{symbol_clean}{suffix}", symbol_clean]
+    for candidate in candidate_symbols:
+        try:
+            info = yf.Ticker(candidate).info
+            resolved = info.get("longName") or info.get("shortName")
+            if resolved and _normalize_search_text(resolved) != symbol_norm:
+                _COMPANY_NAME_CACHE[cache_key] = resolved
+                return resolved
+        except Exception:
+            continue
+
+    fallback = current_name or symbol_clean
+    _COMPANY_NAME_CACHE[cache_key] = fallback
+    return fallback
+
+
+def _enrich_search_names(items: list[dict]) -> list[dict]:
+    for item in items:
+        symbol = item.get("symbol")
+        exchange = item.get("exchange", "NSE")
+        name = item.get("name")
+        resolved = _resolve_company_name(symbol, exchange, name)
+        item["name"] = resolved
+    return items
+
+
+def _build_highlight_map(text: str, query: str) -> dict | None:
+    source = str(text or "")
+    if not source:
+        return None
+
+    query_clean = _normalize_search_text(query)
+    if not query_clean:
+        return None
+
+    # Highlight first matching token to keep payload small and simple.
+    lower_source = source.lower()
+    for token in query_clean.split():
+        start = lower_source.find(token.lower())
+        if start >= 0:
+            return {"start": start, "end": start + len(token)}
+    return None
 
 
 def _dataframe_to_list(df_raw) -> list[dict]:
@@ -434,6 +617,10 @@ def get_ml_recommendations(
 
 def get_realtime_stock(symbol: str) -> dict:
     try:
+        if not is_nse_symbol_present(symbol):
+            print(f"[get_realtime_stock] {symbol}: stock not present in local NSE cache")
+            return {}
+
         ticker_sym = _ticker_sym(symbol)
         ticker     = yf.Ticker(ticker_sym)
         info       = ticker.info
@@ -477,17 +664,43 @@ def get_realtime_stock(symbol: str) -> dict:
             v = _safe_float(yf_val)
             return v if v is not None else nse_rt.get(nse_key)
 
+        # Yahoo often omits currentPrice; use regularMarketPrice / fast_info fallback.
         current = nse_or_yf("currentPrice", info.get("currentPrice"))
+        if current is None:
+            current = _safe_float(info.get("regularMarketPrice"))
+        if current is None:
+            try:
+                current = _safe_float(getattr(ticker, "fast_info", {}).get("last_price"))
+            except Exception:
+                pass
         if current is None:
             print(f"[get_realtime_stock] {symbol}: No price data found")
             return {}
 
-        prev       = nse_or_yf("previousClose", info.get("previousClose")) or current
-        open_price = nse_or_yf("open",           info.get("open"))
-        day_high   = nse_or_yf("dayHigh",        info.get("dayHigh"))
-        day_low    = nse_or_yf("dayLow",         info.get("dayLow"))
-        wk52_high  = nse_or_yf("fiftyTwoWeekHigh", info.get("fiftyTwoWeekHigh"))
-        wk52_low   = nse_or_yf("fiftyTwoWeekLow",  info.get("fiftyTwoWeekLow"))
+        prev = nse_or_yf("previousClose", info.get("previousClose"))
+        if prev is None:
+            prev = _safe_float(info.get("regularMarketPreviousClose"))
+        prev = prev or current
+
+        open_price = nse_or_yf("open", info.get("open"))
+        if open_price is None:
+            open_price = _safe_float(info.get("regularMarketOpen"))
+
+        day_high = nse_or_yf("dayHigh", info.get("dayHigh"))
+        if day_high is None:
+            day_high = _safe_float(info.get("regularMarketDayHigh"))
+
+        day_low = nse_or_yf("dayLow", info.get("dayLow"))
+        if day_low is None:
+            day_low = _safe_float(info.get("regularMarketDayLow"))
+
+        wk52_high = nse_or_yf("fiftyTwoWeekHigh", info.get("fiftyTwoWeekHigh"))
+        if wk52_high is None:
+            wk52_high = _safe_float(info.get("fiftyTwoWeekHigh"))
+
+        wk52_low = nse_or_yf("fiftyTwoWeekLow", info.get("fiftyTwoWeekLow"))
+        if wk52_low is None:
+            wk52_low = _safe_float(info.get("fiftyTwoWeekLow"))
 
         change     = nse_rt.get("change")
         change_pct = nse_rt.get("changePercent")
@@ -1045,27 +1258,234 @@ def get_volume_data(symbol: str, timeframe: str = "3M") -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# COMPANY SEARCH  (unchanged)
+# COMPANY SEARCH
 # ─────────────────────────────────────────────────────────────────────────────
 
-def search_company(symbol: str) -> dict:
+def search_company(symbol: str, limit: int = 10) -> dict:
     if not symbol:
         return {"error": "Symbol parameter is required"}
-    sym     = symbol.strip().upper()
-    results = []
-    for suffix in [".NS", ".BO"]:
-        try:
-            t    = yf.Ticker(sym + suffix)
-            info = t.info
-            name = info.get("longName") or info.get("shortName")
-            if name:
-                results.append({
-                    "symbol":   sym,
-                    "name":     name,
-                    "exchange": "NSE" if suffix == ".NS" else "BSE",
-                    "sector":   info.get("sector"),
-                    "industry": info.get("industry"),
-                })
-        except Exception:
-            pass
+
+    query = symbol.strip().upper()
+    if not query:
+        return {"error": "Symbol parameter is required"}
+
+    expanded_query = _SEARCH_ALIASES.get(query, query)
+    normalized_query = _normalize_search_text(expanded_query)
+
+    max_items = max(1, min(int(limit or 10), 20))
+    cache_key = f"{normalized_query}:{max_items}"
+    cached = _cache_get_search(cache_key)
+    if cached is not None:
+        return {"data": cached}
+
+    results: list[dict] = []
+
+    # Primary local cache search for deterministic speed and reliability.
+    if _NSE_SYMBOLS and normalized_query:
+        name_map = {
+            _normalize_search_text(item["symbol"]): item["name"]
+            for item in _SEARCH_FALLBACK_UNIVERSE
+        }
+        local_ranked = []
+        for local_symbol in _NSE_SYMBOLS:
+            normalized_local = _normalize_search_text(local_symbol)
+            if normalized_local == normalized_query:
+                score = 130
+                matched_on = "local_symbol_exact"
+            elif normalized_local.startswith(normalized_query):
+                score = 105
+                matched_on = "local_symbol_prefix"
+            else:
+                continue
+
+            display_name = name_map.get(normalized_local, local_symbol)
+            local_ranked.append((score, {
+                "symbol": local_symbol,
+                "name": display_name,
+                "exchange": "NSE",
+                "sector": None,
+                "industry": None,
+                "score": score,
+                "matchedOn": matched_on,
+                "highlight": {
+                    "symbol": _build_highlight_map(local_symbol, normalized_query),
+                    "name": _build_highlight_map(display_name, normalized_query),
+                },
+            }))
+
+        local_ranked.sort(key=lambda it: (-it[0], it[1]["symbol"]))
+        for _, item in local_ranked:
+            results.append(item)
+            if len(results) >= max_items:
+                break
+
+    # Fast prefix/partial lookup via Yahoo search endpoint.
+    try:
+        resp = requests.get(
+            "https://query2.finance.yahoo.com/v1/finance/search",
+            params={"q": expanded_query, "quotesCount": max_items * 3, "newsCount": 0},
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+            timeout=3,
+        )
+        if resp.ok:
+            raw_quotes = resp.json().get("quotes", []) or []
+            ranked = []
+            for q in raw_quotes:
+                if q.get("quoteType") != "EQUITY":
+                    continue
+
+                raw_symbol = str(q.get("symbol") or "").strip().upper()
+                if not raw_symbol:
+                    continue
+
+                base_symbol = raw_symbol.replace(".NS", "").replace(".BO", "")
+                name = q.get("longname") or q.get("shortname") or ""
+                exch = (q.get("exchDisp") or q.get("exchange") or "").upper()
+
+                if "NSE" in exch or "NSI" in exch or raw_symbol.endswith(".NS"):
+                    exchange = "NSE"
+                elif "BSE" in exch or raw_symbol.endswith(".BO"):
+                    exchange = "BSE"
+                else:
+                    exchange = exch[:12] if exch else "UNKNOWN"
+
+                name_upper = str(name).upper()
+                normalized_symbol = _normalize_search_text(base_symbol)
+                normalized_name = _normalize_search_text(name_upper)
+
+                score = 0
+                matched_on = "fallback"
+                if normalized_symbol == normalized_query:
+                    score = 140
+                    matched_on = "symbol_exact"
+                elif normalized_name == normalized_query:
+                    score = 125
+                    matched_on = "name_exact"
+                elif normalized_symbol.startswith(normalized_query):
+                    score = 100
+                    matched_on = "symbol_prefix"
+                elif normalized_name.startswith(normalized_query):
+                    score = 85
+                    matched_on = "name_prefix"
+                elif normalized_query in normalized_name:
+                    score = 75
+                    matched_on = "name_contains"
+                elif normalized_query in normalized_symbol:
+                    score = 70
+                    matched_on = "symbol_contains"
+                else:
+                    fuzzy_name = _fuzzy_ratio(normalized_query, normalized_name)
+                    fuzzy_symbol = _fuzzy_ratio(normalized_query, normalized_symbol)
+                    fuzzy_best = max(fuzzy_name, fuzzy_symbol)
+                    if fuzzy_best >= 70:
+                        score = 45 + fuzzy_best // 2
+                        matched_on = "fuzzy_name" if fuzzy_name >= fuzzy_symbol else "fuzzy_symbol"
+                    else:
+                        continue
+
+                if exchange in ("NSE", "BSE"):
+                    score += 10
+
+                ranked.append((score, {
+                    "symbol": base_symbol,
+                    "name": name,
+                    "exchange": exchange,
+                    "sector": None,
+                    "industry": None,
+                    "score": score,
+                    "matchedOn": matched_on,
+                    "highlight": {
+                        "symbol": _build_highlight_map(base_symbol, normalized_query),
+                        "name": _build_highlight_map(name, normalized_query),
+                    },
+                }))
+
+            ranked.sort(key=lambda item: (-item[0], item[1]["symbol"]))
+
+            seen = set()
+            for _, item in ranked:
+                key = (item["symbol"], item["exchange"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(item)
+                if len(results) >= max_items:
+                    break
+        else:
+            print(f"[search_company] yahoo search non-ok for {query}: HTTP {resp.status_code}")
+    except Exception as e:
+        print(f"[search_company] yahoo search failed for {query}: {e}")
+
+    # Fallback exact lookup so symbol validation still works even if search API is down.
+    if not results:
+        for suffix in [".NS", ".BO"]:
+            try:
+                t = yf.Ticker(query + suffix)
+                info = t.info
+                name = info.get("longName") or info.get("shortName")
+                if name:
+                    results.append({
+                        "symbol": query,
+                        "name": name,
+                        "exchange": "NSE" if suffix == ".NS" else "BSE",
+                        "sector": info.get("sector"),
+                        "industry": info.get("industry"),
+                        "score": 100,
+                        "matchedOn": "fallback_exact",
+                        "highlight": {
+                            "symbol": _build_highlight_map(query, normalized_query),
+                            "name": _build_highlight_map(name, normalized_query),
+                        },
+                    })
+            except Exception:
+                pass
+
+    # Final fallback for partial query experience when upstream search is unavailable.
+    if not results:
+        fallback_ranked = []
+        for item in _SEARCH_FALLBACK_UNIVERSE:
+            sym = _normalize_search_text(item["symbol"])
+            name = _normalize_search_text(item["name"])
+            score = 0
+            matched_on = "fallback_list"
+            if sym.startswith(normalized_query):
+                score = 92
+                matched_on = "fallback_symbol_prefix"
+            elif normalized_query in name:
+                score = 80
+                matched_on = "fallback_name_contains"
+            else:
+                fuzz = max(_fuzzy_ratio(normalized_query, sym), _fuzzy_ratio(normalized_query, name))
+                if fuzz < 72:
+                    continue
+                score = 45 + fuzz // 2
+                matched_on = "fallback_fuzzy"
+
+            fallback_ranked.append((score, {
+                "symbol": item["symbol"],
+                "name": item["name"],
+                "exchange": item["exchange"],
+                "sector": None,
+                "industry": None,
+                "score": score,
+                "matchedOn": matched_on,
+                "highlight": {
+                    "symbol": _build_highlight_map(item["symbol"], normalized_query),
+                    "name": _build_highlight_map(item["name"], normalized_query),
+                },
+            }))
+
+        fallback_ranked.sort(key=lambda it: (-it[0], it[1]["symbol"]))
+        results = [item for _, item in fallback_ranked[:max_items]]
+
+    results = _enrich_search_names(results[:max_items])
+    _cache_set_search(cache_key, results)
+
+    exact_query = normalized_query.replace(" ", "")
+    if exact_query and _NSE_SYMBOLS and exact_query not in _NSE_SYMBOLS and not results:
+        return {
+            "data": [],
+            "message": f"stock not present in local NSE cache: {exact_query}",
+        }
+
     return {"data": results}

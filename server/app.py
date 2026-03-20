@@ -16,12 +16,22 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Allow React dev server (localhost:3000) + any deployed frontend origin
-CORS(app, resources={r"/api/*": {"origins": [
+# Allow React dev server + deployed frontend origins from env.
+_cors_origins = {
     "http://localhost:3000",
     "http://localhost:5173",
-    os.getenv("FRONTEND_URL", ""),
-]}})
+}
+
+frontend_url = os.getenv("FRONTEND_URL", "").strip()
+if frontend_url:
+    _cors_origins.add(frontend_url)
+
+for origin in os.getenv("CORS_ORIGINS", "").split(","):
+    origin = origin.strip()
+    if origin:
+        _cors_origins.add(origin)
+
+CORS(app, resources={r"/api/*": {"origins": sorted(_cors_origins)}})
 
 # ── Register blueprints ───────────────────────────────────────────────────────
 from routes.stock_routes     import stock_bp
@@ -38,38 +48,10 @@ app.register_blueprint(user_bp)        # /api/user/*
 # ── Health check ─────────────────────────────────────────────────────────────
 @app.get("/")
 def health():
+    # Keep health output minimal to avoid exposing internal API surface.
     return jsonify({
-        "status":  "ok",
-        "service": "Stockit API Gateway",
-        "port":    10000,
-        "endpoints": [
-            "GET  /api/stocks/<symbol>",
-            "GET  /api/stocks/<symbol>/sparkline",
-            "GET  /api/stocks/<symbol>/chart",
-            "GET  /api/stocks/<symbol>/volume",
-            "GET  /api/stocks/<symbol>/trends",
-            "GET  /api/stocks/<symbol>/recommendation",
-            "GET  /api/stocks/<symbol>/fundamentals",
-            "GET  /api/stocks/<symbol>/news",
-            "GET  /api/stocks/<symbol>/historical",
-            "GET  /api/company/search",
-            "GET  /api/ml/price/<symbol>",
-            "GET  /api/ml/strategy/<symbol>",
-            "POST /api/ml/strategy/custom",
-            "POST /api/ml/recommend",
-            "GET  /api/ml/full/<symbol>",
-            "GET  /api/equity/analyze/<symbol>",
-            "GET  /api/equity/limits",
-            "POST /api/equity/trigger",
-            "GET  /api/portfolio",
-            "POST /api/portfolio",
-            "DELETE /api/portfolio/<id>",
-            "GET  /api/watchlist",
-            "POST /api/watchlist",
-            "DELETE /api/watchlist/<id>",
-            "GET  /api/user/profile",
-            "PUT  /api/user/profile",
-        ]
+        "status": "ok",
+        "service": "Stockit API Gateway"
     })
 
 

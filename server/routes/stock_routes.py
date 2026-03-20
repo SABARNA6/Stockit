@@ -23,6 +23,7 @@ from helpers.stock_helper import (
     get_chart_data,
     get_volume_data,
     search_company,
+    is_nse_symbol_present,
     # ── new ML helpers ────────────────────────────────────
     get_ml_price_prediction,
     get_ml_strategy,
@@ -52,6 +53,9 @@ def err(msg, status=400):
 
 @stock_bp.get("/stocks/<symbol>")
 def stock_overview(symbol):
+    if not is_nse_symbol_present(symbol):
+        return err("Stock not present in local NSE symbol cache", 404)
+
     data = get_realtime_stock(symbol.upper())
     if not data:
         return err("Stock not found", 404)
@@ -160,10 +164,11 @@ def stock_historical(symbol):
 
 @stock_bp.get("/company/search")
 def company_search():
-    symbol = request.args.get("symbol", "").strip().upper()
-    if not symbol:
-        return err("symbol query param is required")
-    result = search_company(symbol)
+    query = request.args.get("q", "").strip() or request.args.get("symbol", "").strip()
+    limit = request.args.get("limit", 10, type=int)
+    if not query:
+        return err("q or symbol query param is required")
+    result = search_company(query, limit=limit)
     if "error" in result:
         return err(result["error"], 400)
     return jsonify(result)

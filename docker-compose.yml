@@ -21,7 +21,7 @@ services:
     environment:
       PORT: 10000
       EQUITY_INTELLIGENCE_URL: http://equity-intelligence:5000
-      FRONTEND_URL: http://localhost:3000
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     depends_on:
       - equity-intelligence
     ports:

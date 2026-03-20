@@ -18,14 +18,6 @@ from data.generate_equities import generate_equity
 analysis_bp = Blueprint("analysis", __name__, url_prefix="/api")
 
 
-def _mask_key(key: str | None) -> str:
-    if not key:
-        return ""
-    if len(key) <= 8:
-        return "*" * len(key)
-    return key[:4] + "..." + key[-4:]
-
-
 def _load_equities() -> list[dict]:
     with open(EQUITIES_PATH) as f:
         return json.load(f)
@@ -96,15 +88,13 @@ def analyze_symbol(symbol: str):
             "analysis": result,
         }), 200
 
-    except Exception as e:
+    except Exception:
         import traceback
         error_trace = traceback.format_exc()
         print(f"[ERROR] analyze_symbol failed: {error_trace}")
         return jsonify({
             "status": "error",
-            "message": str(e),
-            "error_type": type(e).__name__,
-            "traceback": error_trace if os.getenv("DEBUG", "false").lower() == "true" else None
+            "message": "Analysis failed"
         }), 500
 
 
@@ -119,7 +109,6 @@ def get_api_limits():
         for key_id, key_value in GROQ_KEYS.items():
             key_entry = {
                 "configured": bool(key_value),
-                "masked_key": _mask_key(key_value),
                 "models": {},
             }
             for model, model_limits in LIMITS.items():
@@ -147,7 +136,6 @@ def get_api_limits():
         newsapi_key = os.getenv("NEWSAPI_KEY") or os.getenv("NEWS_API_KEY")
         newsapi = {
             "configured": bool(newsapi_key),
-            "masked_key": _mask_key(newsapi_key),
             "status_code": None,
             "headers": {},
             "body_status": None,
@@ -182,8 +170,8 @@ def get_api_limits():
             "cache": cache.snapshot(),
         }), 200
 
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    except Exception:
+        return jsonify({"status": "error", "message": "Could not fetch API limits"}), 500
 
 
 @analysis_bp.route("/equities/sync", methods=["GET", "POST"])
@@ -207,5 +195,5 @@ def sync_equities_to_supabase():
             "saved_to_supabase": saved,
             "equities_path": EQUITIES_PATH,
         }), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    except Exception:
+        return jsonify({"status": "error", "message": "Equity sync failed"}), 500

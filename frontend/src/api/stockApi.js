@@ -44,7 +44,10 @@ export const stockApi = {
     apiFetch(
       `/stocks/${symbol}/historical?period=${period}&page=${page}&limit=${limit}`,
     ).then((r) => r.data),
-  search: (symbol) => apiFetch(`/company/search?symbol=${symbol}`),
+  search: (query, limit = 10) =>
+    apiFetch(
+      `/company/search?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`,
+    ),
 };
 
 // ─── FORMATTERS ──────────────────────────────────────────────────────────────

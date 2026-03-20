@@ -35,14 +35,13 @@ def _proxy_get(path: str, params: dict = None):
         resp.raise_for_status()
         return jsonify(resp.json()), resp.status_code
     except http.exceptions.ConnectionError:
-        return err("Equity Intelligence service is not running. "
-                   "Start it with: python server.py (port 5000)", 503)
+        return err("Equity Intelligence service unavailable", 503)
     except http.exceptions.Timeout:
-        return err("Equity Intelligence timed out — LLM analysis is taking too long.", 504)
-    except http.exceptions.HTTPError as e:
-        return err(f"Equity Intelligence error: {str(e)}", 502)
-    except Exception as e:
-        return err(str(e), 500)
+        return err("Equity Intelligence request timed out", 504)
+    except http.exceptions.HTTPError:
+        return err("Upstream Equity Intelligence error", 502)
+    except Exception:
+        return err("Unexpected proxy error", 500)
 
 
 def _proxy_post(path: str, body: dict = None):
@@ -52,10 +51,9 @@ def _proxy_post(path: str, body: dict = None):
         resp.raise_for_status()
         return jsonify(resp.json()), resp.status_code
     except http.exceptions.ConnectionError:
-        return err("Equity Intelligence service is not running. "
-                   "Start it with: python server.py (port 5000)", 503)
-    except Exception as e:
-        return err(str(e), 500)
+        return err("Equity Intelligence service unavailable", 503)
+    except Exception:
+        return err("Unexpected proxy error", 500)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

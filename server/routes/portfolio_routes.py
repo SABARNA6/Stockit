@@ -6,6 +6,7 @@
 
 from flask import Blueprint, jsonify, request
 from helpers.supabase_helper import get_client_for_user, get_user_from_token
+from helpers.stock_helper import search_company
 
 portfolio_bp = Blueprint("portfolio", __name__, url_prefix="/api")
 
@@ -15,6 +16,20 @@ def ok(data):
 
 def err(msg, status=400):
     return jsonify({"success": False, "message": msg}), status
+
+
+def _normalize_symbol(symbol: str) -> str:
+    s = str(symbol or "").strip().upper()
+    if not s:
+        return ""
+    if ":" in s:
+        s = s.split(":")[-1]
+    s = s.replace(" ", "")
+    for suffix in (".NS", ".BO"):
+        if s.endswith(suffix):
+            s = s[: -len(suffix)]
+            break
+    return s
 
 
 def _get_token(req) -> tuple[str | None, object]:
@@ -74,15 +89,26 @@ def add_portfolio():
     rows = body if isinstance(body, list) else [body]
 
     validated = []
+    symbol_exists_cache = {}
     for row in rows:
-        symbol = str(row.get("symbol", "")).strip().upper()
+        symbol = _normalize_symbol(row.get("symbol", ""))
         if not symbol:
             return err("Each holding requires a 'symbol'")
+
+        if symbol not in symbol_exists_cache:
+            lookup = search_company(symbol)
+            symbol_exists_cache[symbol] = bool(lookup.get("data"))
+        if not symbol_exists_cache[symbol]:
+            return err(f"Invalid equity symbol: {symbol}. Use valid tickers like TCS or RELIANCE.")
+
         try:
             qty      = float(row.get("qty"))
             avg_cost = float(row.get("avg_cost"))
         except (TypeError, ValueError):
             return err(f"Invalid qty or avg_cost for {symbol}")
+
+        if qty <= 0 or avg_cost <= 0:
+            return err(f"qty and avg_cost must be greater than 0 for {symbol}")
 
         validated.append({
             "user_id":  user["id"],
