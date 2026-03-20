@@ -25,7 +25,7 @@ npm install
 npm run dev
 ```
 
-App default URL: `http://localhost:3000`
+App default URL: `http://localhost`
 
 ## API Base URL Contract
 
