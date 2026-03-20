@@ -12,13 +12,28 @@
 from flask import Blueprint, jsonify, request
 import requests as http
 import os
+import re
+import time
+import threading
 
 equity_bp = Blueprint("equity", __name__, url_prefix="/api/equity")
 
 # Equity Intelligence v3 base URL (runs on port 5000 by default)
 EI_BASE = os.getenv("EQUITY_INTELLIGENCE_URL", "http://localhost:5000")
 
-TIMEOUT = 30  # seconds — LLM analysis can be slow
+TIMEOUT = int(os.getenv("EQUITY_PROXY_TIMEOUT", "120"))  # LLM analysis can be slow
+
+_REQUIRE_API_KEY = os.getenv("EQUITY_REQUIRE_API_KEY", "false").lower() == "true"
+_EQUITY_API_KEY = os.getenv("EQUITY_API_KEY", "")
+
+_ANALYZE_RATE_LIMIT = int(os.getenv("EQUITY_ANALYZE_RATE_LIMIT", "3"))
+_ANALYZE_RATE_WINDOW_SEC = int(os.getenv("EQUITY_ANALYZE_RATE_WINDOW_SEC", "60"))
+_MAX_CONCURRENT_ANALYZE = int(os.getenv("EQUITY_ANALYZE_MAX_CONCURRENT", "2"))
+_INFLIGHT_TTL_SEC = int(os.getenv("EQUITY_ANALYZE_INFLIGHT_TTL_SEC", "300"))
+
+_rate_hits: dict[str, list[float]] = {}
+_inflight: dict[str, float] = {}
+_guard_lock = threading.Lock()
 
 
 def ok(data):
@@ -26,6 +41,78 @@ def ok(data):
 
 def err(msg, status=400):
     return jsonify({"success": False, "message": msg}), status
+
+
+def _client_id() -> str:
+    fwd = request.headers.get("X-Forwarded-For", "").strip()
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def _require_equity_api_key():
+    if not _REQUIRE_API_KEY:
+        return None
+    incoming = request.headers.get("X-Equity-Key", "")
+    if not _EQUITY_API_KEY or incoming != _EQUITY_API_KEY:
+        return err("Unauthorized equity endpoint", 401)
+    return None
+
+
+def _check_rate_limit(scope: str, client: str, limit: int, window_sec: int):
+    now = time.time()
+    key = f"{scope}:{client}"
+    with _guard_lock:
+        hits = [ts for ts in _rate_hits.get(key, []) if now - ts < window_sec]
+        if len(hits) >= limit:
+            retry_after = max(1, int(window_sec - (now - hits[0])))
+            return (
+                jsonify({
+                    "success": False,
+                    "message": "Rate limit exceeded for equity analyze",
+                    "retryAfterSec": retry_after,
+                }),
+                429,
+            )
+        hits.append(now)
+        _rate_hits[key] = hits
+    return None
+
+
+def _start_inflight(job_key: str):
+    now = time.time()
+    with _guard_lock:
+        stale = [k for k, ts in _inflight.items() if now - ts > _INFLIGHT_TTL_SEC]
+        for k in stale:
+            _inflight.pop(k, None)
+
+        if job_key in _inflight:
+            return (
+                jsonify({
+                    "success": False,
+                    "message": "Analysis already in progress for this request",
+                    "jobKey": job_key,
+                }),
+                429,
+            )
+
+        if len(_inflight) >= _MAX_CONCURRENT_ANALYZE:
+            return (
+                jsonify({
+                    "success": False,
+                    "message": "Analysis capacity busy, please retry shortly",
+                    "maxConcurrent": _MAX_CONCURRENT_ANALYZE,
+                }),
+                429,
+            )
+
+        _inflight[job_key] = now
+    return None
+
+
+def _end_inflight(job_key: str):
+    with _guard_lock:
+        _inflight.pop(job_key, None)
 
 
 def _proxy_get(path: str, params: dict = None):
@@ -38,8 +125,31 @@ def _proxy_get(path: str, params: dict = None):
         return err("Equity Intelligence service unavailable", 503)
     except http.exceptions.Timeout:
         return err("Equity Intelligence request timed out", 504)
-    except http.exceptions.HTTPError:
-        return err("Upstream Equity Intelligence error", 502)
+    except http.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 502
+        try:
+            upstream_body = e.response.json() if e.response is not None else {}
+        except ValueError:
+            upstream_body = {"raw": (e.response.text if e.response is not None else "")}
+
+        message = "Upstream Equity Intelligence error"
+        if isinstance(upstream_body, dict):
+            message = (
+                upstream_body.get("message")
+                or upstream_body.get("error")
+                or upstream_body.get("status")
+                or message
+            )
+
+        return jsonify({
+            "success": False,
+            "message": message,
+            "upstream": {
+                "status": status,
+                "path": path,
+                "body": upstream_body,
+            },
+        }), status
     except Exception:
         return err("Unexpected proxy error", 500)
 
@@ -52,6 +162,31 @@ def _proxy_post(path: str, body: dict = None):
         return jsonify(resp.json()), resp.status_code
     except http.exceptions.ConnectionError:
         return err("Equity Intelligence service unavailable", 503)
+    except http.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 502
+        try:
+            upstream_body = e.response.json() if e.response is not None else {}
+        except ValueError:
+            upstream_body = {"raw": (e.response.text if e.response is not None else "")}
+
+        message = "Upstream Equity Intelligence error"
+        if isinstance(upstream_body, dict):
+            message = (
+                upstream_body.get("message")
+                or upstream_body.get("error")
+                or upstream_body.get("status")
+                or message
+            )
+
+        return jsonify({
+            "success": False,
+            "message": message,
+            "upstream": {
+                "status": status,
+                "path": path,
+                "body": upstream_body,
+            },
+        }), status
     except Exception:
         return err("Unexpected proxy error", 500)
 
@@ -77,12 +212,40 @@ def _proxy_post(path: str, body: dict = None):
 # ─────────────────────────────────────────────────────────────────────────────
 @equity_bp.get("/analyze/<symbol>")
 def equity_analyze(symbol):
-    hours_back  = request.args.get("hours_back",  24,    type=int)
-    prune_news  = request.args.get("prune_news",  "false")
-    return _proxy_get(
-        f"/api/analyze/{symbol.upper()}",
-        params={"hours_back": hours_back, "prune_news": prune_news},
+    auth_error = _require_equity_api_key()
+    if auth_error:
+        return auth_error
+
+    normalized_symbol = str(symbol or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{1,15}", normalized_symbol):
+        return err("Invalid symbol format", 400)
+
+    hours_back = request.args.get("hours_back", 24, type=int)
+    prune_news = request.args.get("prune_news", "false")
+    hours_back = max(1, min(int(hours_back or 24), 24))
+
+    client = _client_id()
+    limited = _check_rate_limit(
+        scope="equity_analyze",
+        client=client,
+        limit=_ANALYZE_RATE_LIMIT,
+        window_sec=_ANALYZE_RATE_WINDOW_SEC,
     )
+    if limited:
+        return limited
+
+    job_key = f"{normalized_symbol}:{hours_back}:{str(prune_news).lower()}"
+    inflight = _start_inflight(job_key)
+    if inflight:
+        return inflight
+
+    try:
+        return _proxy_get(
+            f"/api/analyze/{normalized_symbol}",
+            params={"hours_back": hours_back, "prune_news": prune_news},
+        )
+    finally:
+        _end_inflight(job_key)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -100,6 +263,9 @@ def equity_limits():
 # ─────────────────────────────────────────────────────────────────────────────
 @equity_bp.post("/trigger")
 def equity_trigger():
+    auth_error = _require_equity_api_key()
+    if auth_error:
+        return auth_error
     return _proxy_post("/api/rss/trigger")
 
 

@@ -18,6 +18,7 @@ from helpers.stock_helper import (
     get_financials,
     get_finacial_metric,
     get_news,
+    get_yfinance_news,
     get_stock_trends,
     get_recommendation,
     get_chart_data,
@@ -136,16 +137,28 @@ def stock_news(symbol):
     import re
     # Normalize: TCS.NS and TCS → same news (strip exchange suffix)
     symbol_clean = re.sub(r"\.(NS|BO|L|TO|AX|HK)$", "", symbol.upper())
+    refresh = str(request.args.get("refresh", "0")).lower() in ("1", "true", "yes")
 
     google_sheet = os.getenv("GOOGLE_SHEETS_URL")
-    if google_sheet:
+    if google_sheet and not refresh:
         url      = f"{google_sheet}?symbol={symbol_clean}"
         response = requests.get(url)
         if response.ok:
             print("Cache Hit")
-            return ok(_normalize_sheets_news(response.json(), symbol_clean))
+            cached_payload = _normalize_sheets_news(response.json(), symbol_clean)
+            if cached_payload.get("news"):
+                return ok(cached_payload)
+            print("Cache empty, falling back to yfinance")
+            yf_payload = get_yfinance_news(symbol_clean, limit=10)
+            if yf_payload.get("news"):
+                return ok(yf_payload)
     print("cache Miss")
-    return ok(get_news(symbol.upper(), get_realtime_stock))
+    live_payload = get_news(symbol.upper(), get_realtime_stock)
+    if live_payload.get("news"):
+        return ok(live_payload)
+
+    print("Live news empty, falling back to yfinance")
+    return ok(get_yfinance_news(symbol_clean, limit=10))
 
 
 @stock_bp.get("/stocks/<symbol>/historical")

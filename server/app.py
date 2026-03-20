@@ -11,6 +11,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 import os
+import yfinance as yf
 
 load_dotenv()
 
@@ -53,6 +54,39 @@ def health():
         "status": "ok",
         "service": "Stockit API Gateway"
     })
+
+
+@app.get("/dummynews/<symbol>")
+def dummy_news(symbol: str):
+    try:
+        clean = str(symbol or "").strip().upper()
+        if not clean:
+            return jsonify({"success": False, "message": "symbol is required"}), 400
+
+        # Prefer NSE ticker first for Indian symbols, then fallback to raw symbol.
+        candidates = [f"{clean}.NS", clean]
+        news_items = []
+        used_ticker = clean
+
+        for candidate in candidates:
+            try:
+                items = yf.Ticker(candidate).get_news(count=10, tab="news") or []
+                if items:
+                    news_items = items
+                    used_ticker = candidate
+                    break
+            except Exception:
+                continue
+
+        return jsonify({
+            "success": True,
+            "symbol": clean,
+            "ticker": used_ticker,
+            "count": len(news_items),
+            "news": news_items,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 if __name__ == "__main__":

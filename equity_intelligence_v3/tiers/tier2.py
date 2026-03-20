@@ -1,5 +1,8 @@
 import json
+import re
+import time
 from groq import Groq
+from groq import RateLimitError
 from config.config import TIER2_BATCH_SIZE, TIER2_THRESHOLD, GROQ_KEYS
 from core import cache
 from core import budget as bgt
@@ -43,26 +46,46 @@ def _parse_scores(text: str, count: int) -> list[dict]:
 def _score_batch(articles: list[dict], equity: dict) -> list[dict]:
     """Score one batch of up to TIER2_BATCH_SIZE articles."""
     est_tokens = 500
-    api_key, model = router.get_key(tier=2, est_tokens=est_tokens)
-    client = Groq(api_key=api_key)
+    max_attempts = 3
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": _build_prompt(articles, equity)},
-        ],
-        temperature=0.1,
-        max_tokens=400,
-    )
+    for attempt in range(1, max_attempts + 1):
+        api_key, model = router.get_key(tier=2, est_tokens=est_tokens)
+        client = Groq(api_key=api_key)
 
-    tokens_used = response.usage.total_tokens
-    key_id = "key_a" if api_key == GROQ_KEYS["key_a"] else "key_b"
-    bgt.record(key_id, model, tokens_used)
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user",   "content": _build_prompt(articles, equity)},
+                ],
+                temperature=0.1,
+                max_tokens=400,
+            )
 
-    text    = response.choices[0].message.content
-    results = _parse_scores(text, len(articles))
-    return results
+            tokens_used = response.usage.total_tokens
+            key_id = "key_a" if api_key == GROQ_KEYS["key_a"] else "key_b"
+            bgt.record(key_id, model, tokens_used)
+
+            text    = response.choices[0].message.content
+            results = _parse_scores(text, len(articles))
+            return results
+        except RateLimitError as e:
+            msg = str(e)
+            wait_s = 2.0 * attempt
+            m = re.search(r"try again in\s*([0-9.]+)s", msg, flags=re.IGNORECASE)
+            if m:
+                wait_s = max(wait_s, float(m.group(1)) + 0.5)
+            print(f"[tier2] rate-limited on attempt {attempt}/{max_attempts}; sleeping {wait_s:.1f}s")
+            if attempt == max_attempts:
+                print("[tier2] max retries reached, using neutral fallback scores")
+                return [{"id": i, "score": 5, "type": "SECTOR_LEVEL"} for i in range(len(articles))]
+            time.sleep(wait_s)
+        except Exception as e:
+            print(f"[tier2] batch scoring failed: {e}")
+            return [{"id": i, "score": 5, "type": "SECTOR_LEVEL"} for i in range(len(articles))]
+
+    return [{"id": i, "score": 5, "type": "SECTOR_LEVEL"} for i in range(len(articles))]
 
 
 # ─── MAIN ENTRY ───────────────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 import json
 import re
+import time
 from groq import Groq
+from groq import RateLimitError
 from config.config import TIER3_BATCH_SIZE, QUALITY_THRESHOLD, GROQ_KEYS
 from core import cache
 from core import budget as bgt
@@ -145,32 +147,49 @@ def _analyze_batch(articles: list[dict], equity: dict) -> list[dict]:
     max_score  = max(a.get("score", 0) for a in articles)
     est_tokens = 800
 
-    api_key, model = router.get_key(
-        tier=3,
-        score=max_score,
-        est_tokens=est_tokens
-    )
-    client = Groq(api_key=api_key)
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        api_key, model = router.get_key(
+            tier=3,
+            score=max_score,
+            est_tokens=est_tokens
+        )
+        client = Groq(api_key=api_key)
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": _build_prompt(articles, equity)},
-        ],
-        temperature=0.0,       # deterministic — better JSON compliance
-        max_tokens=800,        # increased to avoid truncation
-    )
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user",   "content": _build_prompt(articles, equity)},
+                ],
+                temperature=0.0,       # deterministic — better JSON compliance
+                max_tokens=800,        # increased to avoid truncation
+            )
 
-    tokens_used = response.usage.total_tokens
-    key_id = "key_a" if api_key == GROQ_KEYS["key_a"] else "key_b"
-    bgt.record(key_id, model, tokens_used)
+            tokens_used = response.usage.total_tokens
+            key_id = "key_a" if api_key == GROQ_KEYS["key_a"] else "key_b"
+            bgt.record(key_id, model, tokens_used)
 
-    raw  = response.choices[0].message.content
-    print(f"[tier3] model={model} tokens={tokens_used}")
+            raw = response.choices[0].message.content
+            print(f"[tier3] model={model} tokens={tokens_used}")
+            return _parse_analysis(raw, len(articles))
+        except RateLimitError as e:
+            msg = str(e)
+            wait_s = 2.0 * attempt
+            m = re.search(r"try again in\s*([0-9.]+)s", msg, flags=re.IGNORECASE)
+            if m:
+                wait_s = max(wait_s, float(m.group(1)) + 0.5)
+            print(f"[tier3] rate-limited on attempt {attempt}/{max_attempts}; sleeping {wait_s:.1f}s")
+            if attempt == max_attempts:
+                print("[tier3] max retries reached, using low-confidence fallback analysis")
+                return _parse_analysis("[]", len(articles))
+            time.sleep(wait_s)
+        except Exception as e:
+            print(f"[tier3] batch analysis failed: {e}")
+            return _parse_analysis("[]", len(articles))
 
-    results = _parse_analysis(raw, len(articles))
-    return results
+    return _parse_analysis("[]", len(articles))
 
 
 # ─── MAIN ENTRY ───────────────────────────────────────────────────────────────

@@ -253,52 +253,59 @@ export default function PortfolioPage({ onBack }) {
   // 4. FETCH PORTFOLIO NEWS  (GET /api/stocks/<symbol>/news for top holdings)
   // Called lazily when user visits the News page
   // ══════════════════════════════════════════════════════════════════════════
-  const fetchPortfolioNews = useCallback(async () => {
-    if (!holdings.length || portfolioNews.length) return;
+  const fetchPortfolioNews = useCallback(
+    async (force = false) => {
+      if (!holdings.length) return;
+      if (!force && portfolioNews.length) return;
 
-    setLoadingNews(true);
+      setLoadingNews(true);
 
-    // Normalize symbol: strip .NS / .BO suffix for news lookup
-    // (news API uses company name search, not exchange suffix)
-    // Also deduplicate: TCS.NS and TCS are the same company
-    const normalizeForNews = (symbol) => symbol.replace(/\.(NS|BO|L|TO)$/i, "");
+      // Normalize symbol: strip .NS / .BO suffix for news lookup
+      // (news API uses company name search, not exchange suffix)
+      // Also deduplicate: TCS.NS and TCS are the same company
+      const normalizeForNews = (symbol) =>
+        symbol.replace(/\.(NS|BO|L|TO)$/i, "");
 
-    // Deduplicate by normalized symbol, then take top 3 by value
-    const seen = new Set();
-    const top3 = [...holdings]
-      .sort((a, b) => (b.currentValue || 0) - (a.currentValue || 0))
-      .filter((h) => {
-        const normalized = normalizeForNews(h.symbol);
-        if (seen.has(normalized)) return false;
-        seen.add(normalized);
-        return true;
-      })
-      .slice(0, 3);
+      // Deduplicate by normalized symbol, then take top 3 by value
+      const seen = new Set();
+      const top3 = [...holdings]
+        .sort((a, b) => (b.currentValue || 0) - (a.currentValue || 0))
+        .filter((h) => {
+          const normalized = normalizeForNews(h.symbol);
+          if (seen.has(normalized)) return false;
+          seen.add(normalized);
+          return true;
+        })
+        .slice(0, 3);
 
-    try {
-      const newsResults = await Promise.all(
-        top3.map(async (h) => {
-          // Use the original symbol for the API call (backend handles .NS lookup)
-          const displaySymbol = normalizeForNews(h.symbol);
-          try {
-            const data = await apiFetch(`/stocks/${h.symbol}/news`);
-            return {
-              symbol: displaySymbol,
-              news: data?.news || [],
-              sentiment: data?.sentiment || {},
-            };
-          } catch {
-            return { symbol: displaySymbol, news: [], sentiment: {} };
-          }
-        }),
-      );
-      setPortfolioNews(newsResults);
-    } catch (err) {
-      console.error("[fetchPortfolioNews]", err);
-    } finally {
-      setLoadingNews(false);
-    }
-  }, [holdings, portfolioNews]);
+      try {
+        const newsResults = await Promise.all(
+          top3.map(async (h) => {
+            // Use the original symbol for the API call (backend handles .NS lookup)
+            const displaySymbol = normalizeForNews(h.symbol);
+            try {
+              const data = await apiFetch(
+                `/stocks/${h.symbol}/news${force ? "?refresh=1" : ""}`,
+              );
+              return {
+                symbol: displaySymbol,
+                news: data?.news || [],
+                sentiment: data?.sentiment || {},
+              };
+            } catch {
+              return { symbol: displaySymbol, news: [], sentiment: {} };
+            }
+          }),
+        );
+        setPortfolioNews(newsResults);
+      } catch (err) {
+        console.error("[fetchPortfolioNews]", err);
+      } finally {
+        setLoadingNews(false);
+      }
+    },
+    [holdings, portfolioNews],
+  );
 
   // ══════════════════════════════════════════════════════════════════════════
   // MUTATIONS
@@ -506,7 +513,7 @@ export default function PortfolioPage({ onBack }) {
             watchlist={watchlist}
             portfolioNews={portfolioNews} // ← real news (replaces PERSONALIZED_NEWS mock)
             loading={loadingNews}
-            onRefresh={fetchPortfolioNews}
+            onRefresh={() => fetchPortfolioNews(true)}
           />
         );
 

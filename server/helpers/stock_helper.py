@@ -1217,6 +1217,67 @@ def get_news(symbol: str, get_realtime_stock_fn) -> dict:
         return {"source": "error", "sentiment": {"positive": 0, "neutral": 100, "negative": 0}, "news": []}
 
 
+def get_yfinance_news(symbol: str, limit: int = 10) -> dict:
+    """Fallback news fetch directly from Yahoo Finance when cache/API is empty."""
+    try:
+        base = _symbol_base(symbol)
+        candidates = [f"{base}.NS", base]
+        raw_items = []
+        used_symbol = base
+
+        for candidate in candidates:
+            try:
+                items = yf.Ticker(candidate).get_news(count=limit, tab="news") or []
+                if items:
+                    raw_items = items
+                    used_symbol = candidate
+                    break
+            except Exception:
+                continue
+
+        formatted = []
+        for item in raw_items:
+            content = item.get("content") if isinstance(item, dict) else {}
+            title = content.get("title") or item.get("title") or ""
+            summary = content.get("summary") or content.get("description") or ""
+            provider = content.get("provider") or {}
+            source = provider.get("displayName") if isinstance(provider, dict) else ""
+            url = content.get("canonicalUrl", {}).get("url") if isinstance(content.get("canonicalUrl"), dict) else ""
+            published_at = content.get("pubDate") or item.get("pubDate") or ""
+
+            sentiment = _analyze_sentiment(f"{title}. {summary}")
+            formatted.append({
+                "title": title,
+                "summary": summary,
+                "source": source,
+                "publishedAt": published_at,
+                "url": url,
+                "tags": [sentiment["sentiment"].lower()],
+                "sentiment": sentiment["sentiment"],
+                "confidence": sentiment["confidence"],
+                "symbol": base,
+            })
+
+        pos = sum(1 for a in formatted if a.get("sentiment") == "Positive")
+        neg = sum(1 for a in formatted if a.get("sentiment") == "Negative")
+        neu = sum(1 for a in formatted if a.get("sentiment") == "Neutral")
+        total = pos + neu + neg or 1
+
+        return {
+            "source": "yfinance",
+            "ticker": used_symbol,
+            "sentiment": {
+                "positive": round(pos / total * 100, 2),
+                "neutral": round(neu / total * 100, 2),
+                "negative": round(neg / total * 100, 2),
+            },
+            "news": formatted,
+        }
+    except Exception as e:
+        print(f"[get_yfinance_news] {symbol}: {e}")
+        return {"source": "yfinance_error", "sentiment": {"positive": 0, "neutral": 100, "negative": 0}, "news": []}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TRENDS  (unchanged)
 # ─────────────────────────────────────────────────────────────────────────────
