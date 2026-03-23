@@ -41,6 +41,10 @@ _SEARCH_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _SEARCH_CACHE_TTL_SECONDS = 120
 _SEARCH_CACHE_EVICT_INTERVAL_SECONDS = 60
 _SEARCH_CACHE_LAST_EVICT_TS = 0.0
+_RECOMMENDATION_CACHE: dict[str, tuple[float, dict]] = {}
+_RECOMMENDATION_CACHE_TTL_SECONDS = int(os.getenv("STOCK_RECOMMENDATION_CACHE_TTL_SEC", "120"))
+_ML_RECOMMEND_CACHE: dict[str, tuple[float, dict]] = {}
+_ML_RECOMMEND_CACHE_TTL_SECONDS = int(os.getenv("ML_RECOMMENDATION_CACHE_TTL_SEC", "300"))
 _SEARCH_ALIASES = {
     "HDFCBANK": "HDFC BANK",
     "RIL": "RELIANCE",
@@ -131,6 +135,23 @@ def _cache_set_search(key: str, data: list[dict]) -> None:
         _cache_evict_stale(now)
         _SEARCH_CACHE_LAST_EVICT_TS = now
     _SEARCH_CACHE[key] = (now, data)
+
+
+def _cache_get_dict(cache: dict[str, tuple[float, dict]], key: str, ttl_seconds: int) -> dict | None:
+    now = datetime.now(timezone.utc).timestamp()
+    hit = cache.get(key)
+    if not hit:
+        return None
+    ts, data = hit
+    if now - ts > ttl_seconds:
+        cache.pop(key, None)
+        return None
+    return data
+
+
+def _cache_set_dict(cache: dict[str, tuple[float, dict]], key: str, data: dict) -> None:
+    now = datetime.now(timezone.utc).timestamp()
+    cache[key] = (now, data)
 
 
 def clear_search_cache(prefix: str | None = None) -> int:
@@ -725,6 +746,20 @@ def get_ml_recommendations(
         ]
         
         print(f"[get_ml_recommendations] Portfolio has {len(normalized_portfolio)} unique tickers (deduplicated)")
+
+        cache_key_payload = {
+            "portfolio": normalized_portfolio,
+            "extra_candidates": extra_candidates.upper().strip(),
+            "risk_profile": risk_profile,
+            "top_k": int(top_k),
+            "run_backtest": bool(run_backtest),
+        }
+        cache_key = json.dumps(cache_key_payload, sort_keys=True, separators=(",", ":"))
+        cached = _cache_get_dict(_ML_RECOMMEND_CACHE, cache_key, _ML_RECOMMEND_CACHE_TTL_SECONDS)
+        if cached is not None:
+            print("[get_ml_recommendations] cache hit")
+            return cached
+
         print(f"[get_ml_recommendations] Sending normalized portfolio: {normalized_portfolio}")
         
         client = _get_recommendation_client()
@@ -746,7 +781,7 @@ def get_ml_recommendations(
         bt_table     = _dataframe_to_list(result[2])
         trades_table = _dataframe_to_list(result[3])
 
-        return {
+        response_payload = {
             "risk_profile":      full_output.get("risk_profile", risk_profile),
             "portfolio_total":   full_output.get("portfolio_total"),
             "portfolio_weights": full_output.get("portfolio_weights", {}),
@@ -758,6 +793,9 @@ def get_ml_recommendations(
             "backtest_table":    bt_table,
             "trades_table":      trades_table,
         }
+
+        _cache_set_dict(_ML_RECOMMEND_CACHE, cache_key, response_payload)
+        return response_payload
 
     except ValueError as ve:
         error_msg = f"Input validation failed: {str(ve)}"
@@ -1360,7 +1398,12 @@ def get_stock_trends(symbol: str) -> dict:
 
 def get_recommendation(symbol: str) -> dict:
     try:
-        ticker  = yf.Ticker(_ticker_sym(symbol))
+        symbol_clean = str(symbol or "").strip().upper()
+        cached = _cache_get_dict(_RECOMMENDATION_CACHE, symbol_clean, _RECOMMENDATION_CACHE_TTL_SECONDS)
+        if cached is not None:
+            return cached
+
+        ticker  = yf.Ticker(_ticker_sym(symbol_clean))
         info    = ticker.info
         current = _safe_float(info.get("currentPrice")) or 0
         target  = _safe_float(info.get("targetMeanPrice")) or current * 1.1
@@ -1394,7 +1437,7 @@ def get_recommendation(symbol: str) -> dict:
         except Exception:
             pass
 
-        return {
+        response_payload = {
             "recommendation": recommendation, "confidence": confidence,
             "timeHorizon": "Short Term" if abs(upside) < 15 else "Medium Term",
             "targetPrice": round(target, 2), "upside": round(upside, 2),
@@ -1414,6 +1457,9 @@ def get_recommendation(symbol: str) -> dict:
                 "risks":       ["Market volatility", "Sector headwinds"],
             },
         }
+
+        _cache_set_dict(_RECOMMENDATION_CACHE, symbol_clean, response_payload)
+        return response_payload
     except Exception as e:
         print(f"[get_recommendation] {symbol}: {e}")
         return {

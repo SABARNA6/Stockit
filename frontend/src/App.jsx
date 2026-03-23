@@ -14,7 +14,7 @@ import NewsFeed from "./components/NewsFeed";
 import HistoricalTable from "./components/HistoricalTable";
 import PortfolioPage from "./components/PortfolioPage1";
 
-import { Sun, Moon, BarChart2, Briefcase } from "lucide-react";
+import { Sun, Moon, BarChart2, Briefcase, Menu, X } from "lucide-react";
 
 const SECTIONS = [
   { id: "overview", label: "Overview" },
@@ -89,6 +89,7 @@ function AppInner() {
   const [symbol, setSymbol] = useState("TCS");
   const [isLight, setIsLight] = useState(true); // ← light by default
   const [page, setPage] = useState("market"); // "market" | "portfolio" | "auth"
+  const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
 
   const {
     overview,
@@ -107,6 +108,21 @@ function AppInner() {
       setPage("market");
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!topbarMenuOpen) return;
+    const onResize = () => {
+      if (window.innerWidth > 768) {
+        setTopbarMenuOpen(false);
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [topbarMenuOpen]);
+
+  useEffect(() => {
+    setTopbarMenuOpen(false);
+  }, [page, symbol]);
 
   if (window.location.pathname === "/auth/callback") {
     return <AuthCallback />;
@@ -128,99 +144,114 @@ function AppInner() {
 
         <SearchBar onSelect={(sym) => setSymbol(sym.toUpperCase())} />
 
-        {/* Page switcher */}
-        <div style={{ display: "flex", gap: 4 }}>
-          {[
-            {
-              id: "market",
-              label: "Market",
-              icon: <BarChart2 size={13} />,
-              color: "var(--blue)",
-              bg: "var(--blue-bg)",
-            },
-            {
-              id: "portfolio",
-              label: "Portfolio",
-              icon: <Briefcase size={13} />,
-              color: "var(--green)",
-              bg: "var(--green-bg)",
-            },
-          ].map((p) => (
-            <button
-              key={p.id}
-              onClick={() => {
-                if (p.id === "portfolio" && !user) {
-                  setPage("auth"); // nudge to sign in
-                  return;
+        <button
+          className="topbar-menu-btn"
+          onClick={() => setTopbarMenuOpen((v) => !v)}
+          aria-label="Toggle top menu"
+        >
+          {topbarMenuOpen ? <X size={15} /> : <Menu size={15} />}
+        </button>
+
+        <div className={`topbar-controls ${topbarMenuOpen ? "open" : ""}`}>
+          {/* Page switcher */}
+          <div className="topbar-page-switcher">
+            {[
+              {
+                id: "market",
+                label: "Market",
+                icon: <BarChart2 size={13} />,
+                color: "var(--blue)",
+                bg: "var(--blue-bg)",
+              },
+              {
+                id: "portfolio",
+                label: "Portfolio",
+                icon: <Briefcase size={13} />,
+                color: "var(--green)",
+                bg: "var(--green-bg)",
+              },
+            ].map((p) => (
+              <button
+                key={p.id}
+                className="topbar-switch-btn"
+                onClick={() => {
+                  if (p.id === "portfolio" && !user) {
+                    setPage("auth"); // nudge to sign in
+                    return;
+                  }
+                  setPage(p.id);
+                }}
+                title={
+                  p.id === "portfolio" && !user
+                    ? "Sign in to access your Portfolio"
+                    : ""
                 }
-                setPage(p.id);
-              }}
-              title={
-                p.id === "portfolio" && !user
-                  ? "Sign in to access your Portfolio"
-                  : ""
-              }
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "6px 12px",
+                  background: page === p.id ? p.bg : "transparent",
+                  border: `1px solid ${page === p.id ? p.color : "var(--border)"}`,
+                  borderRadius: "var(--r-sm)",
+                  color:
+                    page === p.id
+                      ? p.color
+                      : p.id === "portfolio" && !user
+                        ? "var(--text-muted)"
+                        : "var(--text-muted)",
+                  fontFamily: "var(--mono)",
+                  fontSize: 11,
+                  cursor: "pointer",
+                  letterSpacing: "0.08em",
+                  transition: "all .15s",
+                  opacity: p.id === "portfolio" && !user ? 0.5 : 1, // dimmed when locked
+                }}
+              >
+                {p.icon} {p.label}
+                {p.id === "portfolio" && !user && (
+                  <span style={{ fontSize: 10 }}>🔒</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          <div className="topbar-right mono">
+            {overview?.lastUpdated
+              ? `Updated ${new Date(overview.lastUpdated).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`
+              : "Live · NSE"}
+          </div>
+
+          <ThemeToggle
+            isLight={isLight}
+            onToggle={() => setIsLight((v) => !v)}
+          />
+
+          {/* ── Auth: show UserMenu if logged in, Sign In button if not ── */}
+          {user ? (
+            <UserMenu onNavigatePortfolio={() => setPage("portfolio")} />
+          ) : (
+            <button
+              className="topbar-signin-btn"
+              onClick={() => setPage("auth")}
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "6px 12px",
-                background: page === p.id ? p.bg : "transparent",
-                border: `1px solid ${page === p.id ? p.color : "var(--border)"}`,
+                padding: "6px 14px",
+                background: "var(--green-bg)",
+                border: "1px solid var(--green)",
                 borderRadius: "var(--r-sm)",
-                color:
-                  page === p.id
-                    ? p.color
-                    : p.id === "portfolio" && !user
-                      ? "var(--text-muted)"
-                      : "var(--text-muted)",
+                color: "var(--green)",
                 fontFamily: "var(--mono)",
                 fontSize: 11,
                 cursor: "pointer",
                 letterSpacing: "0.08em",
                 transition: "all .15s",
-                opacity: p.id === "portfolio" && !user ? 0.5 : 1, // dimmed when locked
+                flexShrink: 0,
               }}
             >
-              {p.icon} {p.label}
-              {p.id === "portfolio" && !user && (
-                <span style={{ fontSize: 10 }}>🔒</span>
-              )}
+              Sign In
             </button>
-          ))}
+          )}
         </div>
-
-        <div className="topbar-right mono">
-          {overview?.lastUpdated
-            ? `Updated ${new Date(overview.lastUpdated).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`
-            : "Live · NSE"}
-        </div>
-
-        <ThemeToggle isLight={isLight} onToggle={() => setIsLight((v) => !v)} />
-
-        {/* ── Auth: show UserMenu if logged in, Sign In button if not ── */}
-        {user ? (
-          <UserMenu onNavigatePortfolio={() => setPage("portfolio")} />
-        ) : (
-          <button
-            onClick={() => setPage("auth")}
-            style={{
-              padding: "6px 14px",
-              background: "var(--green-bg)",
-              border: "1px solid var(--green)",
-              borderRadius: "var(--r-sm)",
-              color: "var(--green)",
-              fontFamily: "var(--mono)",
-              fontSize: 11,
-              cursor: "pointer",
-              letterSpacing: "0.08em",
-              transition: "all .15s",
-              flexShrink: 0,
-            }}
-          >
-            Sign In
-          </button>
-        )}
       </header>
 
       <nav className="section-nav">

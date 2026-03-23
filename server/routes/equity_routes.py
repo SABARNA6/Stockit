@@ -30,9 +30,13 @@ _ANALYZE_RATE_LIMIT = int(os.getenv("EQUITY_ANALYZE_RATE_LIMIT", "3"))
 _ANALYZE_RATE_WINDOW_SEC = int(os.getenv("EQUITY_ANALYZE_RATE_WINDOW_SEC", "60"))
 _MAX_CONCURRENT_ANALYZE = int(os.getenv("EQUITY_ANALYZE_MAX_CONCURRENT", "2"))
 _INFLIGHT_TTL_SEC = int(os.getenv("EQUITY_ANALYZE_INFLIGHT_TTL_SEC", "300"))
+_ANALYZE_RESULT_CACHE_TTL_SEC = int(os.getenv("EQUITY_ANALYZE_RESULT_CACHE_TTL_SEC", "240"))
+_ANALYZE_WAIT_FOR_INFLIGHT_SEC = int(os.getenv("EQUITY_ANALYZE_WAIT_FOR_INFLIGHT_SEC", "95"))
 
 _rate_hits: dict[str, list[float]] = {}
 _inflight: dict[str, float] = {}
+_inflight_events: dict[str, threading.Event] = {}
+_analyze_result_cache: dict[str, tuple[float, dict, int]] = {}
 _guard_lock = threading.Lock()
 
 
@@ -85,46 +89,79 @@ def _start_inflight(job_key: str):
         stale = [k for k, ts in _inflight.items() if now - ts > _INFLIGHT_TTL_SEC]
         for k in stale:
             _inflight.pop(k, None)
+            evt = _inflight_events.pop(k, None)
+            if evt is not None:
+                evt.set()
 
         if job_key in _inflight:
-            return (
-                jsonify({
-                    "success": False,
-                    "message": "Analysis already in progress for this request",
-                    "jobKey": job_key,
-                }),
-                429,
-            )
+            return {"mode": "join", "event": _inflight_events.get(job_key)}
 
         if len(_inflight) >= _MAX_CONCURRENT_ANALYZE:
-            return (
-                jsonify({
-                    "success": False,
-                    "message": "Analysis capacity busy, please retry shortly",
-                    "maxConcurrent": _MAX_CONCURRENT_ANALYZE,
-                }),
-                429,
-            )
+            return {
+                "mode": "reject",
+                "response": (
+                    jsonify({
+                        "success": False,
+                        "message": "Analysis capacity busy, please retry shortly",
+                        "maxConcurrent": _MAX_CONCURRENT_ANALYZE,
+                    }),
+                    429,
+                ),
+            }
 
         _inflight[job_key] = now
-    return None
+        _inflight_events[job_key] = threading.Event()
+    return {"mode": "owner", "event": _inflight_events.get(job_key)}
 
 
 def _end_inflight(job_key: str):
+    evt = None
     with _guard_lock:
         _inflight.pop(job_key, None)
+        evt = _inflight_events.pop(job_key, None)
+    if evt is not None:
+        evt.set()
+
+
+def _cache_get_analyze(job_key: str):
+    now = time.time()
+    with _guard_lock:
+        stale = [k for k, (ts, _, _) in _analyze_result_cache.items() if now - ts > _ANALYZE_RESULT_CACHE_TTL_SEC]
+        for k in stale:
+            _analyze_result_cache.pop(k, None)
+
+        hit = _analyze_result_cache.get(job_key)
+        if hit is None:
+            return None
+        _, payload, status = hit
+        return payload, status
+
+
+def _cache_set_analyze(job_key: str, payload: dict, status: int):
+    with _guard_lock:
+        _analyze_result_cache[job_key] = (time.time(), payload, status)
 
 
 def _proxy_get(path: str, params: dict = None):
     """Forward a GET request to Equity Intelligence and return its response."""
+    payload, status = _proxy_get_payload(path, params=params)
+    return jsonify(payload), status
+
+
+def _proxy_get_payload(path: str, params: dict = None):
+    """Forward GET request and return JSON payload + status without Flask response wrapper."""
     try:
         resp = http.get(f"{EI_BASE}{path}", params=params, timeout=TIMEOUT)
         resp.raise_for_status()
-        return jsonify(resp.json()), resp.status_code
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {"raw": resp.text}
+        return body, resp.status_code
     except http.exceptions.ConnectionError:
-        return err("Equity Intelligence service unavailable", 503)
+        return {"success": False, "message": "Equity Intelligence service unavailable"}, 503
     except http.exceptions.Timeout:
-        return err("Equity Intelligence request timed out", 504)
+        return {"success": False, "message": "Equity Intelligence request timed out"}, 504
     except http.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else 502
         try:
@@ -141,7 +178,7 @@ def _proxy_get(path: str, params: dict = None):
                 or message
             )
 
-        return jsonify({
+        return {
             "success": False,
             "message": message,
             "upstream": {
@@ -149,9 +186,9 @@ def _proxy_get(path: str, params: dict = None):
                 "path": path,
                 "body": upstream_body,
             },
-        }), status
+        }, status
     except Exception:
-        return err("Unexpected proxy error", 500)
+        return {"success": False, "message": "Unexpected proxy error"}, 500
 
 
 def _proxy_post(path: str, body: dict = None):
@@ -235,15 +272,43 @@ def equity_analyze(symbol):
         return limited
 
     job_key = f"{normalized_symbol}:{hours_back}:{str(prune_news).lower()}"
+
+    cached = _cache_get_analyze(job_key)
+    if cached:
+        payload, status = cached
+        return jsonify(payload), status
+
     inflight = _start_inflight(job_key)
-    if inflight:
-        return inflight
+    if inflight.get("mode") == "reject":
+        return inflight["response"]
+
+    if inflight.get("mode") == "join":
+        evt = inflight.get("event")
+        if evt is not None:
+            evt.wait(_ANALYZE_WAIT_FOR_INFLIGHT_SEC)
+        cached_after_wait = _cache_get_analyze(job_key)
+        if cached_after_wait:
+            payload, status = cached_after_wait
+            return jsonify(payload), status
+
+        return (
+            jsonify({
+                "success": False,
+                "message": "Analysis in progress, retry shortly",
+                "jobKey": job_key,
+                "retryAfterSec": 3,
+            }),
+            202,
+        )
 
     try:
-        return _proxy_get(
+        payload, status = _proxy_get_payload(
             f"/api/analyze/{normalized_symbol}",
             params={"hours_back": hours_back, "prune_news": prune_news},
         )
+        if status < 500:
+            _cache_set_analyze(job_key, payload, status)
+        return jsonify(payload), status
     finally:
         _end_inflight(job_key)
 

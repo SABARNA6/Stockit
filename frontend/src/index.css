@@ -1,5 +1,88 @@
-/* ─── FONTS ──────────────────────────────────────────────────────────────────── */
 @import url("https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Fira+Code:wght@300;400;500&family=Lora:ital,wght@0,400;0,600;1,400&display=swap");
+
+/* Portfolio page header */
+.portfolio-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.portfolio-page-header__main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 420px;
+}
+
+.portfolio-page-header__icon {
+  width: 38px;
+  height: 38px;
+  background: var(--green-bg);
+  border: 1px solid var(--green);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--green);
+  flex-shrink: 0;
+}
+
+.portfolio-page-header__text {
+  min-width: 0;
+}
+
+.portfolio-page-header__title {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: clamp(16px, 3.2vw, 20px);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.15;
+}
+
+.portfolio-page-header__sub {
+  margin: 6px 0 0;
+  font-size: clamp(10px, 2.1vw, 12px);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.portfolio-page-header__action {
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .portfolio-page-header {
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .portfolio-page-header__main {
+    flex: 1 1 100%;
+    gap: 10px;
+  }
+
+  .portfolio-page-header__icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 7px;
+  }
+
+  .portfolio-page-header__action {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .portfolio-page-header__action > * {
+    width: 100%;
+  }
+}
 
 /* ─── DARK TOKENS (default) ──────────────────────────────────────────────────── */
 :root {
@@ -68,7 +151,7 @@
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
 }
 
-/* ─── RESET ──────────────────────────────────────────────────────────────────── */
+/* ─── RESET ──────────────────────────────────────────────────────────────── */
 *,
 *::before,
 *::after {
@@ -248,6 +331,32 @@ a {
   flex-shrink: 0;
 }
 
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.topbar-page-switcher {
+  display: flex;
+  gap: 4px;
+}
+
+.topbar-menu-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 /* ─── SECTION NAV ────────────────────────────────────────────────────────────── */
 .section-nav {
   display: flex;
@@ -283,7 +392,7 @@ a {
   background: var(--bg-hover);
 }
 
-/* ─── SEARCH ─────────────────────────────────────────────────────────────────── */
+/* ─── SEARCH ─────────────────────────────────────────────────────────────── */
 .search-wrap {
   position: relative;
   flex: 1;
@@ -1483,7 +1592,7 @@ a {
   cursor: not-allowed;
 }
 
-/* ─── FOOTER ─────────────────────────────────────────────────────────────────── */
+/* ─── FOOTER ─────────────────────────────────────────────────────────────── */
 .app-footer {
   padding: 16px 32px;
   border-top: 1px solid var(--border);
@@ -1507,86 +1616,205 @@ a {
 }
 
 @media (max-width: 768px) {
-  /* Layout */
+  /* ─── LAYOUT ──────────────────────────────────────────── */
   .main-content {
-    padding: 16px 12px 40px;
+    padding: 12px 8px 32px;
+    gap: 16px;
   }
   .topbar {
-    padding: 0 12px;
-    height: 48px;
-    gap: 8px;
+    padding: 0 8px;
+    height: 52px;
+    gap: 6px;
+    flex-wrap: wrap;
   }
   .section-nav {
-    padding: 6px 12px;
+    padding: 6px 8px;
     gap: 0;
+    overflow-x: auto;
   }
   .app-footer {
-    padding: 12px 16px;
+    padding: 8px 8px;
+    font-size: 9px;
   }
 
-  /* Topbar — hide text, keep brand mark + search + toggle */
+  /* ─── TOPBAR ──────────────────────────────────────────── */
+  .brand-mark {
+    font-size: 16px;
+  }
   .brand-name {
     display: none;
   }
-  .topbar-right {
-    display: none;
-  }
+
   .search-wrap {
     max-width: unset;
     flex: 1;
+    min-width: 120px;
+    order: 3;
+    width: 100%;
   }
 
-  /* Section nav — smaller pills */
+  .topbar-menu-btn {
+    display: inline-flex;
+    order: 4;
+  }
+
+  .topbar-controls {
+    display: none;
+    position: fixed;
+    top: 52px;
+    right: 0;
+    left: 0;
+    z-index: 220;
+    margin-left: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    background: var(--bg-section);
+    border-bottom: 1px solid var(--border-light);
+    border-radius: 0;
+    padding: 10px 8px;
+    box-shadow: var(--shadow);
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+
+  .topbar-controls.open {
+    display: flex;
+  }
+
+  .topbar-page-switcher {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .topbar-switch-btn {
+    justify-content: center;
+    width: 100%;
+    padding: 8px 10px !important;
+    font-size: 10px !important;
+  }
+
+  .topbar-right {
+    display: block;
+    margin-left: 0;
+    font-size: 9px;
+    width: 100%;
+    text-align: center;
+    order: 5;
+  }
+
+  .topbar-signin-btn {
+    width: 100%;
+    padding: 8px 10px !important;
+    font-size: 10px !important;
+  }
+
+  /* ─── SECTION NAV ─────────────────────────────────────── */
   .snav-btn {
-    padding: 5px 10px;
-    font-size: 10px;
+    padding: 6px 12px;
+    font-size: 11px;
+    white-space: nowrap;
   }
 
-  /* Stock header */
+  /* ─── STOCK HEADER ────────────────────────────────────── */
   .stock-header {
-    padding: 16px;
-    gap: 14px;
+    padding: 14px 12px;
+    gap: 12px;
+  }
+  .header-top-row {
+    gap: 8px;
+  }
+  .stock-identity {
+    gap: 10px;
+  }
+  .stock-logo {
+    width: 40px;
+    height: 40px;
+    font-size: 12px;
   }
   .stock-name {
     font-size: 18px;
+    margin-bottom: 2px;
+    word-break: break-word;
   }
-  .current-price {
-    font-size: 32px;
-  }
-  .metrics-row {
+  .stock-meta-row {
     gap: 6px;
+    flex-wrap: wrap;
   }
-  .metric-chip {
-    min-width: 80px;
-    padding: 8px 10px;
+  .badge {
+    font-size: 10px;
+    padding: 2px 8px;
   }
-  .chip-value {
-    font-size: 13px;
+  .watchlist-btn {
+    padding: 6px 12px;
+    font-size: 9px;
   }
 
-  /* Signals */
+  .current-price {
+    font-size: 36px;
+  }
+
+  .price-row {
+    align-items: center;
+    gap: 12px;
+  }
+
+  .metrics-row {
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .metric-chip {
+    min-width: 90px;
+    padding: 10px 12px;
+    flex-shrink: 0;
+  }
+  .chip-label {
+    font-size: 8px;
+  }
+  .chip-value {
+    font-size: 14px;
+  }
+
+  /* ─── SIGNALS ─────────────────────────────────────────── */
   .signals-strip {
     grid-template-columns: 1fr;
+  }
+  .signal-cell {
+    padding: 12px 12px;
   }
   .signal-cell:not(:last-child) {
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
+  .signal-value {
+    font-size: 20px;
+  }
 
-  /* News */
+  /* ─── NEWS ────────────────────────────────────────────── */
   .news-grid {
     grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .news-card {
+    padding: 12px;
+  }
+  .news-title {
+    font-size: 13px;
   }
 
-  /* Fundamentals */
+  /* ─── FUNDAMENTALS ────────────────────────────────────── */
   .fund-grid {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
 
-  /* Historical table */
+  /* ─── HISTORICAL TABLE ────────────────────────────────── */
   .hist-controls {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 8px;
   }
   .period-selector {
@@ -1594,48 +1822,66 @@ a {
   }
   .period-btn {
     flex: 1;
-    text-align: center;
+    padding: 6px 10px;
+    font-size: 10px;
   }
   .export-btn {
     width: 100%;
-    text-align: center;
+    padding: 8px 12px;
   }
 
-  /* Rec panel */
+  /* ─── REC PANEL ───────────────────────────────────────── */
   .rec-panel {
-    padding: 16px;
+    padding: 12px 12px;
+    gap: 10px;
+  }
+  .rec-header-row {
+    flex-direction: column;
+    gap: 10px;
   }
   .verdict-badge {
     font-size: 18px;
-    padding: 8px 16px;
+    padding: 10px 16px;
+  }
+
+  /* ─── LAYOUT ──────────────────────────────────────────── */
+  .two-col-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .col-side {
+    position: static;
+    top: auto;
+  }
+
+  .error-banner {
+    margin: 0 8px;
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 480px) {
   .topbar {
-    height: 44px;
+    height: 48px;
   }
   .stock-name {
     font-size: 16px;
   }
   .current-price {
-    font-size: 28px;
+    font-size: 32px;
   }
   .metric-chip {
-    min-width: 70px;
+    min-width: 80px;
+    padding: 8px 10px;
   }
   .snav-btn {
-    padding: 4px 8px;
-    font-size: 9px;
-  }
-  .fund-grid {
-    grid-template-columns: 1fr;
+    padding: 5px 10px;
+    font-size: 10px;
   }
   .news-card {
-    padding: 14px;
+    padding: 10px;
   }
   .news-title {
-    font-size: 13px;
+    font-size: 12px;
   }
   .search-input {
     font-size: 11px;
@@ -1643,11 +1889,10 @@ a {
 
   /* Stack price row vertically on very small screens */
   .price-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
+    flex-direction: row;
+    align-items: center;
   }
   .header-top-row {
-    flex-direction: column;
+    flex-direction: row;
   }
 }

@@ -7,23 +7,37 @@ export default function Sidebar({
   displayName,
   avatarInitial,
   collapsed,
+  isMobile = false,
+  mobileOpen = false,
   onToggle,
 }) {
+  const sidebarWidth = collapsed ? 56 : 220;
+
   return (
     <aside
       style={{
-        width: collapsed ? 56 : 220,
-        minHeight: "100vh",
+        width: sidebarWidth,
+        minHeight: isMobile ? "100dvh" : "100vh",
         background: "var(--bg-section)",
         borderRight: "1px solid var(--border)",
         display: "flex",
         flexDirection: "column",
-        transition: "width .2s cubic-bezier(.4,0,.2,1)",
+        transition: isMobile
+          ? "transform .22s cubic-bezier(.4,0,.2,1)"
+          : "width .2s cubic-bezier(.4,0,.2,1)",
         flexShrink: 0,
-        position: "sticky",
+        position: isMobile ? "fixed" : "sticky",
         top: 0,
-        alignSelf: "flex-start",
+        left: isMobile ? 0 : "auto",
+        alignSelf: isMobile ? "stretch" : "flex-start",
         overflow: "hidden",
+        zIndex: isMobile ? 40 : "auto",
+        transform: isMobile
+          ? mobileOpen
+            ? "translateX(0)"
+            : "translateX(-108%)"
+          : "none",
+        boxShadow: isMobile ? "2px 0 24px rgba(0,0,0,.35)" : "none",
       }}
     >
       <div
@@ -101,7 +115,7 @@ export default function Sidebar({
             flexShrink: 0,
           }}
         >
-          {collapsed ? Icon.menu : Icon.close}
+          {isMobile ? Icon.close : collapsed ? Icon.menu : Icon.close}
         </button>
       </div>
       <nav style={{ flex: 1, padding: "8px 0" }}>

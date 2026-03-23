@@ -48,6 +48,16 @@ def err(msg, status=400):
     return jsonify({"success": False, "message": msg}), status
 
 
+def _as_bool(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # EXISTING ENDPOINTS  (all unchanged)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -335,7 +345,7 @@ def ml_recommend():
     risk_profile     = body.get("risk_profile", "Medium")
     extra_candidates = body.get("extra_candidates", "")
     top_k            = max(1, min(int(body.get("top_k", 5)), 10))
-    run_backtest     = bool(body.get("run_backtest", True))
+    run_backtest     = _as_bool(body.get("run_backtest"), default=False)
 
     if risk_profile not in ("Low", "Medium", "High"):
         return err("risk_profile must be Low, Medium, or High")

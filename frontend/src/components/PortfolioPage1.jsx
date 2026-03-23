@@ -28,7 +28,7 @@ import AddHoldingPage from "./portfolio/pages/AddHolding";
 import WatchlistPage from "./portfolio/pages/Watchlist";
 import AIPicksPage from "./portfolio/pages/AIPicks";
 import NewsPage from "./portfolio/pages/News";
-import { NAV_ITEMS } from "./portfolio/utils";
+import { Icon, NAV_ITEMS } from "./portfolio/utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
@@ -121,6 +121,8 @@ export default function PortfolioPage({ onBack }) {
   // ── UI state ──────────────────────────────────────────────────────────────
   const [activePage, setActivePage] = useState("overview");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // ── Data state ────────────────────────────────────────────────────────────
   const [holdings, setHoldings] = useState([]);
@@ -220,34 +222,38 @@ export default function PortfolioPage({ onBack }) {
   // 3. FETCH AI PICKS  (POST /api/ml/recommend)
   // Called lazily when user visits the AI Picks page
   // ══════════════════════════════════════════════════════════════════════════
-  const fetchAIPicks = useCallback(async () => {
-    if (!holdings.length || aiPicks) return; // already loaded or no holdings
-    setLoadingAI(true);
+  const fetchAIPicks = useCallback(
+    async (force = false) => {
+      if (!holdings.length) return;
+      if (!force && aiPicks) return; // skip if already loaded unless explicitly retried
+      setLoadingAI(true);
 
-    try {
-      const portfolio = holdings.map((h) => ({
-        ticker: h.symbol,
-        market_value: h.currentValue || h.qty * h.avg_cost,
-      }));
+      try {
+        const portfolio = holdings.map((h) => ({
+          ticker: h.symbol,
+          market_value: h.currentValue || h.qty * h.avg_cost,
+        }));
 
-      const result = await apiFetch("/ml/recommend", {
-        method: "POST",
-        body: JSON.stringify({
-          portfolio,
-          risk_profile: "Medium",
-          top_k: 5,
-          run_backtest: true,
-        }),
-      });
+        const result = await apiFetch("/ml/recommend", {
+          method: "POST",
+          body: JSON.stringify({
+            portfolio,
+            risk_profile: "Medium",
+            top_k: 5,
+            run_backtest: true,
+          }),
+        });
 
-      setAiPicks(result);
-    } catch (err) {
-      console.error("[fetchAIPicks]", err);
-      setAiPicks({ error: err.message });
-    } finally {
-      setLoadingAI(false);
-    }
-  }, [holdings, aiPicks]);
+        setAiPicks(result);
+      } catch (err) {
+        console.error("[fetchAIPicks]", err);
+        setAiPicks({ error: err.message });
+      } finally {
+        setLoadingAI(false);
+      }
+    },
+    [holdings, aiPicks],
+  );
 
   // ══════════════════════════════════════════════════════════════════════════
   // 4. FETCH PORTFOLIO NEWS  (GET /api/stocks/<symbol>/news for top holdings)
@@ -364,6 +370,38 @@ export default function PortfolioPage({ onBack }) {
     fetchPortfolioAndWatchlist();
   }, [fetchPortfolioAndWatchlist]);
 
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 900px)");
+    const apply = () => setIsMobileView(media.matches);
+    apply();
+
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", apply);
+      return () => media.removeEventListener("change", apply);
+    }
+
+    media.addListener(apply);
+    return () => media.removeListener(apply);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileView) {
+      setMobileSidebarOpen(false);
+      return;
+    }
+
+    const prevOverflow = document.body.style.overflow;
+    if (mobileSidebarOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = prevOverflow || "";
+    }
+
+    return () => {
+      document.body.style.overflow = prevOverflow || "";
+    };
+  }, [isMobileView, mobileSidebarOpen]);
+
   // Lazy-load AI picks + news when those pages are visited
   useEffect(() => {
     if (activePage === "ai") fetchAIPicks();
@@ -378,6 +416,16 @@ export default function PortfolioPage({ onBack }) {
   const totalPnL = totalCurrent - totalInvested;
   const totalPnLPct = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
   const healthScore = computeHealthScore(holdings);
+
+  const handleNavigate = useCallback(
+    (pageId) => {
+      setActivePage(pageId);
+      if (isMobileView) {
+        setMobileSidebarOpen(false);
+      }
+    },
+    [isMobileView],
+  );
 
   // ══════════════════════════════════════════════════════════════════════════
   // RENDER
@@ -502,7 +550,7 @@ export default function PortfolioPage({ onBack }) {
             aiPicks={aiPicks} // ← real ML data (replaces AI_SUGGESTIONS mock)
             loadingAI={loadingAI}
             onAddWatchlist={addWatchlist}
-            onRetry={fetchAIPicks}
+            onRetry={() => fetchAIPicks(true)}
           />
         );
 
@@ -530,14 +578,35 @@ export default function PortfolioPage({ onBack }) {
         background: "var(--bg-primary)",
       }}
     >
+      {isMobileView && mobileSidebarOpen && (
+        <div
+          onClick={() => setMobileSidebarOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.45)",
+            backdropFilter: "blur(1px)",
+            zIndex: 30,
+          }}
+        />
+      )}
+
       <Sidebar
         active={activePage}
-        onNavigate={setActivePage}
+        onNavigate={handleNavigate}
         onBack={onBack}
         displayName={displayName}
         avatarInitial={avatarInitial}
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed((c) => !c)}
+        collapsed={isMobileView ? false : sidebarCollapsed}
+        isMobile={isMobileView}
+        mobileOpen={mobileSidebarOpen}
+        onToggle={() => {
+          if (isMobileView) {
+            setMobileSidebarOpen(false);
+            return;
+          }
+          setSidebarCollapsed((c) => !c);
+        }}
       />
 
       <div
@@ -551,22 +620,46 @@ export default function PortfolioPage({ onBack }) {
         {/* ── Breadcrumb bar ── */}
         <div
           style={{
-            height: 48,
+            minHeight: 48,
             background: "var(--bg-section)",
             borderBottom: "1px solid var(--border)",
             display: "flex",
             alignItems: "center",
-            padding: "0 24px",
+            padding: isMobileView ? "8px 14px" : "0 24px",
             gap: 8,
             flexShrink: 0,
+            flexWrap: "wrap",
           }}
         >
+          {isMobileView && (
+            <button
+              onClick={() => setMobileSidebarOpen((v) => !v)}
+              style={{
+                border: "1px solid var(--border-light)",
+                background: "var(--bg-card)",
+                color: "var(--text-primary)",
+                width: 30,
+                height: 30,
+                borderRadius: 6,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+              aria-label="Toggle portfolio menu"
+            >
+              {Icon.menu}
+            </button>
+          )}
+
           <span
             style={{
               fontFamily: "var(--mono)",
               fontSize: 10,
               color: "var(--text-muted)",
               letterSpacing: "0.1em",
+              whiteSpace: "nowrap",
             }}
           >
             MARKETLENS
@@ -590,6 +683,7 @@ export default function PortfolioPage({ onBack }) {
               color: "var(--text-secondary)",
               letterSpacing: "0.1em",
               textTransform: "uppercase",
+              whiteSpace: "nowrap",
             }}
           >
             {NAV_ITEMS.find((n) => n.id === activePage)?.label}
@@ -607,6 +701,7 @@ export default function PortfolioPage({ onBack }) {
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
+                whiteSpace: "nowrap",
               }}
             >
               <span
@@ -628,7 +723,7 @@ export default function PortfolioPage({ onBack }) {
         <main
           style={{
             flex: 1,
-            padding: "28px 32px 48px",
+            padding: isMobileView ? "18px 14px 28px" : "28px 32px 48px",
             overflowY: "auto",
             maxWidth: 1200,
           }}
@@ -639,7 +734,7 @@ export default function PortfolioPage({ onBack }) {
         {/* ── Footer ── */}
         <footer
           style={{
-            padding: "12px 32px",
+            padding: isMobileView ? "10px 14px" : "12px 32px",
             borderTop: "1px solid var(--border)",
             fontFamily: "var(--mono)",
             fontSize: 10,
