@@ -23,19 +23,40 @@ function normalizeSymbol(raw) {
 }
 
 // ── Auth header from current Supabase session ─────────────────────────────
-async function authHeaders() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  return {
-    Authorization: `Bearer ${session.access_token}`,
-    "Content-Type": "application/json",
-  };
+async function authHeaders(accessToken) {
+  // If we have the token from context, use it directly (no need for async getSession)
+  if (accessToken) {
+    return {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+  }
+
+  // Fallback: try to get session (shouldn't normally happen if context is set up)
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      console.warn("[authHeaders] No active session");
+      return null;
+    }
+    return {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    };
+  } catch (err) {
+    console.error("[authHeaders] Exception:", err);
+    return null;
+  }
 }
 
 // ── Flask API fetch helper ────────────────────────────────────────────────
-async function apiFetch(path, options = {}) {
-  const headers = await authHeaders();
+async function apiFetch(path, options = {}, accessToken) {
+  const headers = await authHeaders(accessToken);
+  if (!headers) {
+    throw new Error("Authentication required - please log in");
+  }
   const res = await fetch(`${API}${path}`, {
     ...options,
     headers: { ...headers, ...(options.headers || {}) },
@@ -47,7 +68,7 @@ async function apiFetch(path, options = {}) {
   return res.json();
 }
 
-export default function AddHoldingPage({ userId, onSaved }) {
+export default function AddHoldingPage({ userId, accessToken, onSaved }) {
   const [tab, setTab] = useState("manual");
   const [rows, setRows] = useState([{ symbol: "", qty: "", avg_cost: "" }]);
   const [csv, setCsv] = useState("");
@@ -83,6 +104,8 @@ export default function AddHoldingPage({ userId, onSaved }) {
         try {
           const res = await apiFetch(
             `/company/search?symbol=${encodeURIComponent(symbol)}`,
+            {},
+            accessToken,
           );
           const exists = Array.isArray(res?.data) && res.data.length > 0;
           return { symbol, exists };
@@ -127,10 +150,14 @@ export default function AddHoldingPage({ userId, onSaved }) {
       await validateEquities(data);
 
       // ── ONLY CHANGE: Flask API instead of supabase.from("portfolio").insert() ──
-      await apiFetch("/portfolio", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      await apiFetch(
+        "/portfolio",
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        },
+        accessToken,
+      );
       // ─────────────────────────────────────────────────────────────────────────
 
       setMsg({
@@ -382,9 +409,15 @@ export default function AddHoldingPage({ userId, onSaved }) {
               accept=".csv,.txt"
               style={{ display: "none" }}
               onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (file.size > 1024 * 1024) {
+                  alert("File too large. Maximum size is 1MB.");
+                  return;
+                }
                 const r = new FileReader();
                 r.onload = (ev) => setCsv(ev.target.result);
-                r.readAsText(e.target.files[0]);
+                r.readAsText(file);
               }}
             />
             <span

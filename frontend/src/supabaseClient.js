@@ -1,15 +1,20 @@
 import { createClient } from "@supabase/supabase-js";
 
-// ─── Replace these with your Supabase project credentials ────────────────────
-// Found at: https://supabase.com/dashboard → your project → Settings → API
-const SUPABASE_URL = "https://jfgenjpkachgssbsxzzf.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_z27ATYTCE1sSyeTVNvD7SA_spK23_iH";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error(
+    "Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY environment variables. " +
+    "Create a .env file with these values (see .env.example)."
+  );
+}
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    flowType: "pkce", // ← tokens exchanged server-side, never in URL
+    flowType: "implicit", // ← Use implicit flow for browser-only apps (avoids PKCE lock issues)
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: true, // ← clears the token from URL after reading
+    detectSessionInUrl: true,
   },
 });

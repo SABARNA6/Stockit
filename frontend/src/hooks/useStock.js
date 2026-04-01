@@ -3,6 +3,7 @@ import { stockApi } from "../api/stockApi";
 
 // Simple in-memory cache: { key: { data, ts } }
 const CACHE = {};
+const CACHE_MAX_SIZE = 200;
 const TTL = {
   overview: 60_000,
   sparkline: 60_000,
@@ -74,10 +75,21 @@ function writeRecentSearches(items) {
   }
 }
 
-function cached(key, ttl, fn) {
+function cached(key, ttl, fn, signal) {
   const hit = CACHE[key];
   if (hit && Date.now() - hit.ts < ttl) return Promise.resolve(hit.data);
-  return fn().then((data) => {
+  return fn(signal).then((data) => {
+    if (Object.keys(CACHE).length >= CACHE_MAX_SIZE) {
+      let oldestKey = null;
+      let oldestTs = Infinity;
+      for (const k in CACHE) {
+        if (CACHE[k].ts < oldestTs) {
+          oldestTs = CACHE[k].ts;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) delete CACHE[oldestKey];
+    }
     CACHE[key] = { data, ts: Date.now() };
     return data;
   });
@@ -98,14 +110,11 @@ export function useStockData(symbol) {
     if (!sym) return;
     setState((s) => ({ ...s, loading: true, error: null }));
     try {
-      // First, validate that symbol exists
       const overview = await cached(`overview:${sym}`, TTL.overview, () =>
-        stockApi.overview(sym),
-      );
+        stockApi.overview(sym), signal);
 
-      if (signal?.aborted) return; // Ignore if symbol changed
+      if (signal?.aborted) return;
 
-      // If overview is null or empty, symbol doesn't exist
       if (!overview) {
         setState((s) => ({
           ...s,
@@ -115,18 +124,15 @@ export function useStockData(symbol) {
         return;
       }
 
-      // Symbol exists, now fetch other data in parallel
       const [sparkline, trends, recommendation] = await Promise.all([
         cached(`sparkline:${sym}`, TTL.sparkline, () =>
-          stockApi.sparkline(sym, 14),
-        ),
-        cached(`trends:${sym}`, TTL.trends, () => stockApi.trends(sym)),
+          stockApi.sparkline(sym, 14), signal),
+        cached(`trends:${sym}`, TTL.trends, () => stockApi.trends(sym), signal),
         cached(`recommendation:${sym}`, TTL.recommendation, () =>
-          stockApi.recommendation(sym),
-        ),
+          stockApi.recommendation(sym), signal),
       ]);
 
-      if (signal?.aborted) return; // Ignore if symbol changed
+      if (signal?.aborted) return;
 
       setState({
         overview,
@@ -137,7 +143,8 @@ export function useStockData(symbol) {
         error: null,
       });
     } catch (e) {
-      if (signal?.aborted) return; // Ignore if symbol changed
+      if (signal?.aborted) return;
+      if (e.name === "AbortError") return;
       setState((s) => ({ ...s, loading: false, error: e.message }));
     }
   }, []);
@@ -247,11 +254,11 @@ export function useFundamentals(symbol) {
 
   useEffect(() => {
     if (!symbol) return;
+    const controller = new AbortController();
     let cancelled = false;
     setLoading(true);
     cached(`fundamentals:${symbol}`, TTL.fundamentals, () =>
-      stockApi.fundamentals(symbol),
-    )
+      stockApi.fundamentals(symbol), controller.signal)
       .then((d) => {
         if (cancelled) return;
         setData(d);
@@ -264,6 +271,7 @@ export function useFundamentals(symbol) {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [symbol]);
 
@@ -277,9 +285,10 @@ export function useNews(symbol) {
 
   useEffect(() => {
     if (!symbol) return;
+    const controller = new AbortController();
     let cancelled = false;
     setLoading(true);
-    cached(`news:${symbol}`, TTL.news, () => stockApi.news(symbol))
+    cached(`news:${symbol}`, TTL.news, () => stockApi.news(symbol), controller.signal)
       .then((d) => {
         if (cancelled) return;
         setData(d);
@@ -292,6 +301,7 @@ export function useNews(symbol) {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [symbol]);
 
@@ -305,10 +315,11 @@ export function useHistorical(symbol, period, page) {
 
   useEffect(() => {
     if (!symbol) return;
+    const controller = new AbortController();
     let cancelled = false;
     setLoading(true);
     const key = `hist:${symbol}:${period}:${page}`;
-    cached(key, TTL.historical, () => stockApi.historical(symbol, period, page))
+    cached(key, TTL.historical, () => stockApi.historical(symbol, period, page), controller.signal)
       .then((d) => {
         if (cancelled) return;
         setData(d);
@@ -321,6 +332,7 @@ export function useHistorical(symbol, period, page) {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [symbol, period, page]);
 

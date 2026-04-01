@@ -14,6 +14,13 @@ Respond ONLY with a valid JSON array of objects, no other text.
 Format: [{"id": 0, "score": 7, "type": "INDIRECT_REVENUE"}, ...]
 Types: DIRECT, INDIRECT_REVENUE, INDIRECT_COST, INDIRECT_MACRO, NOISE"""
 
+_groq_clients = {}
+
+def _get_groq_client(api_key):
+    if api_key not in _groq_clients:
+        _groq_clients[api_key] = Groq(api_key=api_key)
+    return _groq_clients[api_key]
+
 
 def _build_prompt(articles: list[dict], equity: dict) -> str:
     profile = (
@@ -50,7 +57,7 @@ def _score_batch(articles: list[dict], equity: dict) -> list[dict]:
 
     for attempt in range(1, max_attempts + 1):
         api_key, model = router.get_key(tier=2, est_tokens=est_tokens)
-        client = Groq(api_key=api_key)
+        client = _get_groq_client(api_key)
 
         try:
             response = client.chat.completions.create(

@@ -14,6 +14,7 @@ import os
 import json
 import base64
 import time
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -39,7 +40,7 @@ def _get_base_client():
 # ── JWT helpers ───────────────────────────────────────────────────────────────
 
 def _decode_jwt(token: str) -> dict | None:
-    """Decode JWT payload without signature verification."""
+    """Decode JWT payload without signature verification (for inspection only)."""
     try:
         parts = token.strip().split(".")
         if len(parts) != 3:
@@ -51,12 +52,39 @@ def _decode_jwt(token: str) -> dict | None:
         return None
 
 
-def get_user_from_token(token: str) -> dict | None:
+def _verify_jwt_with_supabase(token: str) -> dict | None:
     """
-    Decode a Supabase JWT and return {id, email}.
-    Returns None if token is missing, malformed, or expired.
+    Verify JWT by calling Supabase's /auth/v1/user endpoint.
+    This cryptographically validates the token against Supabase's signing key.
+    Returns user info dict or None if invalid/expired.
     """
     try:
+        resp = requests.get(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            user_data = resp.json()
+            return {
+                "id": user_data.get("id"),
+                "email": user_data.get("email", ""),
+            }
+        return None
+    except Exception as e:
+        print(f"[_verify_jwt_with_supabase] Verification failed: {e}")
+        return None
+
+
+def get_user_from_token(token: str) -> dict | None:
+    """
+    Verify a Supabase JWT via Supabase auth API and return {id, email}.
+    Returns None if token is missing, malformed, expired, or forged.
+    """
+    try:
+        if not token:
+            return None
+        # First do a quick structural decode to check expiry locally (fast path)
         payload = _decode_jwt(token)
         if not payload:
             return None
@@ -66,7 +94,12 @@ def get_user_from_token(token: str) -> dict | None:
         user_id = payload.get("sub")
         if not user_id:
             return None
-        return {"id": user_id, "email": payload.get("email", "")}
+        # Cryptographically verify the token with Supabase
+        verified = _verify_jwt_with_supabase(token)
+        if verified and verified.get("id") == user_id:
+            return verified
+        print("[get_user_from_token] Token verification failed — possible forgery")
+        return None
     except Exception as e:
         print(f"[get_user_from_token] {e}")
         return None

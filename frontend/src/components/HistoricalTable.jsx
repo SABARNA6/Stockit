@@ -16,10 +16,12 @@ function exportCSV(rows, symbol) {
     r.date, r.open, r.high, r.low, r.close, r.volume, r.changePercent
   ].join(",")));
   const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
-  a.href     = URL.createObjectURL(blob);
+  a.href     = url;
   a.download = `${symbol}_historical.csv`;
   a.click();
+  URL.revokeObjectURL(url);
 }
 
 export default function HistoricalTable({ symbol }) {

@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { useStockData } from "./hooks/useStock";
 
 import AuthPage from "./AuthPage";
+import AuthCallback from "./AuthCallback";
 import UserMenu from "./components/UserMenu";
 import SearchBar from "./components/SearchBar";
 import StockHeader from "./components/StockHeader";

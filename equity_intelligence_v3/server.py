@@ -7,9 +7,11 @@
 """
 
 import os
+import signal
+import sys
 from flask import Flask, jsonify
 from dotenv import load_dotenv
-from core import cache
+from core import cache, background
 from routes.rss_routes import rss_bp
 from routes.analysis_routes import analysis_bp
 
@@ -17,6 +19,21 @@ load_dotenv()
 
 # Initialize cache database on startup
 cache.init()
+cache.purge_expired()
+cache.start_purge_thread()
+
+# Start background RSS pull
+# background.start_rss_pool_thread()  # Disabled for manual triggering
+
+# ─────────────────────────────────────────────
+#  GRACEFUL SHUTDOWN
+# ─────────────────────────────────────────────
+def _handle_exit(signum, frame):
+    print(f"\n[server] Received signal {signum}, shutting down gracefully...")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, _handle_exit)
+signal.signal(signal.SIGTERM, _handle_exit)
 
 # ─────────────────────────────────────────────
 #  INITIALIZE FLASK APP
@@ -24,8 +41,8 @@ cache.init()
 app = Flask(__name__)
 
 # Register blueprints
-app.register_blueprint(rss_bp)
-app.register_blueprint(analysis_bp)
+app.register_blueprint(rss_bp, url_prefix='/api/rss')
+app.register_blueprint(analysis_bp, url_prefix='/api')
 
 
 # ─────────────────────────────────────────────

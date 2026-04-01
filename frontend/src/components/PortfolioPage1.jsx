@@ -43,20 +43,40 @@ const PRICE_CACHE_TTL = 60_000; // 1 minute
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Get Authorization header from current Supabase session */
-async function authHeaders() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error("Not logged in");
-  return {
-    Authorization: `Bearer ${session.access_token}`,
-    "Content-Type": "application/json",
-  };
+async function authHeaders(accessToken) {
+  // If we have the token from context, use it directly (no need for async getSession)
+  if (accessToken) {
+    return {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+  }
+
+  // Fallback: try to get session (shouldn't normally happen if context is set up)
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      console.warn("[authHeaders] No active session");
+      return null;
+    }
+    return {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    };
+  } catch (err) {
+    console.error("[authHeaders] Exception:", err);
+    return null;
+  }
 }
 
 /** Fetch from Flask backend with auth */
-async function apiFetch(path, options = {}) {
-  const headers = await authHeaders();
+async function apiFetch(path, options = {}, accessToken) {
+  const headers = await authHeaders(accessToken);
+  if (!headers) {
+    throw new Error("Authentication required - please log in");
+  }
   const res = await fetch(`${API}${path}`, {
     ...options,
     headers: { ...headers, ...(options.headers || {}) },
@@ -116,7 +136,7 @@ function computeHealthScore(holdings) {
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 export default function PortfolioPage({ onBack }) {
-  const { user, displayName, avatarInitial } = useAuth();
+  const { user, accessToken, displayName, avatarInitial } = useAuth();
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [activePage, setActivePage] = useState("overview");
@@ -150,8 +170,8 @@ export default function PortfolioPage({ onBack }) {
 
     try {
       const [rawHoldings, rawWatchlist] = await Promise.all([
-        apiFetch("/portfolio"),
-        apiFetch("/watchlist"),
+        apiFetch("/portfolio", {}, accessToken),
+        apiFetch("/watchlist", {}, accessToken),
       ]);
 
       // Holdings without live price yet — set ltp = avg_cost as placeholder
@@ -175,7 +195,7 @@ export default function PortfolioPage({ onBack }) {
       setError(err.message);
       setLoadingData(false);
     }
-  }, [user]);
+  }, [user, accessToken]);
 
   // ══════════════════════════════════════════════════════════════════════════
   // 2. FETCH LIVE PRICES  (GET /api/stocks/<symbol> for each holding)
@@ -184,7 +204,11 @@ export default function PortfolioPage({ onBack }) {
     setLoadingPrices(true);
     const now = Date.now();
 
-    // Batch price fetches, respecting cache
+    const staleKeys = Object.keys(priceCache.current).filter(
+      (k) => now - priceCache.current[k].timestamp > PRICE_CACHE_TTL,
+    );
+    staleKeys.forEach((k) => delete priceCache.current[k]);
+
     const updates = await Promise.all(
       holdingsToPrice.map(async (h) => {
         const cached = priceCache.current[h.symbol];
@@ -234,15 +258,19 @@ export default function PortfolioPage({ onBack }) {
           market_value: h.currentValue || h.qty * h.avg_cost,
         }));
 
-        const result = await apiFetch("/ml/recommend", {
-          method: "POST",
-          body: JSON.stringify({
-            portfolio,
-            risk_profile: "Medium",
-            top_k: 5,
-            run_backtest: true,
-          }),
-        });
+        const result = await apiFetch(
+          "/ml/recommend",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              portfolio,
+              risk_profile: "Medium",
+              top_k: 5,
+              run_backtest: true,
+            }),
+          },
+          accessToken,
+        );
 
         setAiPicks(result);
       } catch (err) {
@@ -252,7 +280,7 @@ export default function PortfolioPage({ onBack }) {
         setLoadingAI(false);
       }
     },
-    [holdings, aiPicks],
+    [holdings, aiPicks, accessToken],
   );
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -292,6 +320,8 @@ export default function PortfolioPage({ onBack }) {
             try {
               const data = await apiFetch(
                 `/stocks/${h.symbol}/news${force ? "?refresh=1" : ""}`,
+                {},
+                accessToken,
               );
               return {
                 symbol: displaySymbol,
@@ -310,7 +340,7 @@ export default function PortfolioPage({ onBack }) {
         setLoadingNews(false);
       }
     },
-    [holdings, portfolioNews],
+    [holdings, portfolioNews, accessToken],
   );
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -319,7 +349,7 @@ export default function PortfolioPage({ onBack }) {
 
   const deleteHolding = async (id) => {
     try {
-      await apiFetch(`/portfolio/${id}`, { method: "DELETE" });
+      await apiFetch(`/portfolio/${id}`, { method: "DELETE" }, accessToken);
       setHoldings((h) => h.filter((x) => x.id !== id));
     } catch (err) {
       console.error("[deleteHolding]", err);
@@ -328,17 +358,21 @@ export default function PortfolioPage({ onBack }) {
 
   const addWatchlist = async (stock) => {
     try {
-      const data = await apiFetch("/watchlist", {
-        method: "POST",
-        body: JSON.stringify({
-          symbol: stock.symbol,
-          name: stock.name || "",
-          sector: stock.sector || "",
-          price: stock.price || null,
-          target_price: stock.target_price || null,
-          note: stock.note || null,
-        }),
-      });
+      const data = await apiFetch(
+        "/watchlist",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            symbol: stock.symbol,
+            name: stock.name || "",
+            sector: stock.sector || "",
+            price: stock.price || null,
+            target_price: stock.target_price || null,
+            note: stock.note || null,
+          }),
+        },
+        accessToken,
+      );
       if (data) setWatchlist((w) => [data, ...w]);
     } catch (err) {
       // 409 = already in watchlist — surface to user
@@ -348,7 +382,7 @@ export default function PortfolioPage({ onBack }) {
 
   const removeWatchlist = async (id) => {
     try {
-      await apiFetch(`/watchlist/${id}`, { method: "DELETE" });
+      await apiFetch(`/watchlist/${id}`, { method: "DELETE" }, accessToken);
       setWatchlist((w) => w.filter((x) => x.id !== id));
     } catch (err) {
       console.error("[removeWatchlist]", err);
@@ -531,7 +565,13 @@ export default function PortfolioPage({ onBack }) {
         );
 
       case "add":
-        return <AddHoldingPage userId={user.id} onSaved={onHoldingSaved} />;
+        return (
+          <AddHoldingPage
+            userId={user.id}
+            accessToken={accessToken}
+            onSaved={onHoldingSaved}
+          />
+        );
 
       case "watchlist":
         return (

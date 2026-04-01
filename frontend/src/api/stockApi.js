@@ -2,11 +2,10 @@
 const BASE =
   typeof window !== "undefined" ? window.STOCK_API_BASE || "/api" : "/api";
 
-async function apiFetch(path) {
+async function apiFetch(path, signal) {
   const fullUrl = `${BASE}${path}`;
-  console.error(`[apiFetch] Calling: ${fullUrl}`);
   try {
-    const res = await fetch(fullUrl);
+    const res = await fetch(fullUrl, signal ? { signal } : undefined);
     if (!res.ok) {
       console.error(`[apiFetch] HTTP ${res.status} from ${fullUrl}`);
       throw new Error(`API ${res.status}: ${path}`);
@@ -14,6 +13,7 @@ async function apiFetch(path) {
     const data = await res.json();
     return data;
   } catch (err) {
+    if (err.name === "AbortError") return;
     console.error(`[apiFetch] Failed to fetch ${fullUrl}:`, err.message);
     throw err;
   }

@@ -19,7 +19,13 @@ export default function UserMenu({ onNavigatePortfolio }) {
 
   const handleSignOut = async () => {
     setOpen(false);
-    await signOut();
+    try {
+      await signOut();
+      console.log("[UserMenu] Signed out successfully");
+    } catch (error) {
+      console.error("[UserMenu] Sign out failed:", error);
+      alert("Failed to sign out: " + (error.message || "Unknown error"));
+    }
   };
 
   return (

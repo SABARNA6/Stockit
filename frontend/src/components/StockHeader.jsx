@@ -132,6 +132,7 @@ function MetricChip({ label, value, sub, children }) {
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
+let _toastTimeoutId = null;
 function showToast(message, type = "success") {
   const existing = document.getElementById("ml-toast");
   if (existing) existing.remove();
@@ -156,7 +157,11 @@ function showToast(message, type = "success") {
     pointerEvents: "none",
   });
   document.body.appendChild(el);
-  setTimeout(() => el?.remove(), 3000);
+  if (_toastTimeoutId) clearTimeout(_toastTimeoutId);
+  _toastTimeoutId = setTimeout(() => {
+    el?.remove();
+    _toastTimeoutId = null;
+  }, 3000);
 }
 
 // ─── Target Price Modal ───────────────────────────────────────────────────────
@@ -167,7 +172,8 @@ function TargetPriceModal({ symbol, currentPrice, onConfirm, onCancel }) {
 
   // Auto-focus input when modal opens
   useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 50);
+    const id = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(id);
   }, []);
 
   // Close on Escape
@@ -498,7 +504,8 @@ export default function StockHeader({ overview, sparkline, onSignInRequired }) {
       .maybeSingle()
       .then(({ data }) => {
         setInWatchlist(!!data);
-      });
+      })
+      .catch(() => {});
   }, [user, overview?.symbol]);
 
   // ── Click watchlist button ─────────────────────────────────────────────────

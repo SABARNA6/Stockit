@@ -19,7 +19,22 @@ from ingestion import news
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 NEWSAPI_SYMBOLS_PATH = ROOT_DIR / "data" / "newsapi_symbols.json"
-load_dotenv(ROOT_DIR / ".env")
+
+# ── Load environment variables ─────────────────────────────────────────────────
+# First try from file (for local dev), then fall back to Docker env variables
+_env_file_path = ROOT_DIR / ".env"
+if _env_file_path.exists():
+    load_dotenv(_env_file_path)
+    print(f"[RSS] Loaded .env from {_env_file_path}")
+else:
+    print(f"[RSS] .env file not found at {_env_file_path}, using Docker environment")
+
+# Validate critical env vars
+_supabase_url = os.getenv("SUPABASE_URL", "").strip()
+_supabase_key = os.getenv("SUPABASE_KEY", "").strip()
+if not _supabase_url or not _supabase_key:
+    print(f"[RSS] WARNING: Missing SUPABASE env vars. URL={bool(_supabase_url)}, KEY={bool(_supabase_key)}")
+
 NEWSAPI_URL = "https://newsapi.org/v2/everything"
 
 
@@ -51,20 +66,27 @@ def _newsapi_backoff_sec() -> float:
     return float(os.getenv("NEWSAPI_BACKOFF_SEC", "2.0"))
 
 # ─────────────────────────────────────────────
-#  SUPABASE CLIENT
+#  SUPABASE CLIENT (singleton)
 # ─────────────────────────────────────────────
+_client_instance = None
+
 def _client() -> Client:
-    """Create Supabase client."""
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
-    if not url or not key:
-        raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY in .env file")
-    return create_client(url, key)
+    """Create or reuse Supabase client singleton."""
+    global _client_instance
+    if _client_instance is None:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY")
+        if not url or not key:
+            raise ValueError("Missing SUPABASE_URL or SUPABASE_KEY in .env file")
+        _client_instance = create_client(url, key)
+    return _client_instance
 
 
 def _get_headers() -> dict:
     """Get headers for direct REST API calls."""
-    key = os.getenv("SUPABASE_KEY")
+    key = os.getenv("SUPABASE_KEY", "").strip()
+    if not key:
+        raise ValueError("SUPABASE_KEY environment variable is not set or empty")
     return {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
@@ -104,17 +126,25 @@ def load_rss_feeds() -> list:
 # ─────────────────────────────────────────────
 #  LOAD EXISTING LINKS (for deduplication)
 # ─────────────────────────────────────────────
-def load_existing_links() -> set:
-    """Load all existing article links from rss_pool for deduplication."""
+def load_existing_links(hours_back: int = 168) -> set:
+    """Load recent article links from rss_pool for deduplication.
+    
+    Only loads links from the last N hours (default 168 = 7 days) to
+    avoid unbounded memory growth. Older articles are already pruned
+    by prune_old_news so they won't reappear in feeds.
+    """
     try:
-        # Supabase pagination — load all links
+        from datetime import datetime, timezone, timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours_back)).isoformat()
+        
         all_links = set()
         page      = 0
         page_size = 1000
+        max_pages = 100
 
-        while True:
+        while page < max_pages:
             response = requests.get(
-                _url("rss_pool") + f"?select=link&limit={page_size}&offset={page * page_size}",
+                _url("rss_pool") + f"?select=link&gte=created_at,{cutoff}&limit={page_size}&offset={page * page_size}",
                 headers=_get_headers(),
                 timeout=15
             )
@@ -128,11 +158,11 @@ def load_existing_links() -> set:
                 break
             page += 1
 
-        print(f"[RSS] Loaded {len(all_links)} existing links for dedup")
+        print(f"[RSS] Loaded {len(all_links)} existing links for dedup (last {hours_back}h)")
         return all_links
 
     except Exception as e:
-        print(f"[RSS] ❌ Exception loading existing links: {e}")
+        print(f"[RSS] Exception loading existing links: {e}")
         return set()
 
 
@@ -427,26 +457,45 @@ def fetch_newsapi_equity_articles(existing_links: set) -> tuple[list, int, int]:
 #  SAVE ARTICLES TO SUPABASE
 # ─────────────────────────────────────────────
 def _save_new_articles(articles: list) -> int:
-    """Save new articles to rss_pool. Returns count saved."""
+    """Save new articles to rss_pool in batches. Returns count saved."""
     if not articles:
         return 0
-    try:
-        response = requests.post(
-            _url("rss_pool"),
-            headers={**_get_headers(),
-                     "Prefer": "resolution=ignore-duplicates,return=minimal"},
-            json=articles,
-            timeout=20
-        )
-        if response.status_code in (200, 201):
-            print(f"[RSS] ✅ Saved {len(articles)} articles to rss_pool")
-            return len(articles)
-        else:
-            print(f"[RSS] ❌ Save failed: {response.status_code} {response.text[:200]}")
-            return 0
-    except Exception as e:
-        print(f"[RSS] ❌ Save exception: {e}")
-        return 0
+    
+    # ✅ Explicitly set created_at for each article (timezone-aware UTC)
+    now_utc = datetime.now(timezone.utc).isoformat()
+    for article in articles:
+        if "created_at" not in article:
+            article["created_at"] = now_utc
+    
+    total_saved = 0
+    batch_size = 50  # Smaller batches reduce conflict likelihood
+    
+    for i in range(0, len(articles), batch_size):
+        batch = articles[i:i + batch_size]
+        try:
+            response = requests.post(
+                _url("rss_pool"),
+                headers={**_get_headers(),
+                         "Prefer": "return=minimal"},
+                json=batch,
+                timeout=20
+            )
+            
+            # 409 means conflicts exist - that's OK, some were saved
+            if response.status_code in (200, 201):
+                total_saved += len(batch)
+                print(f"[RSS] ✅ Saved batch {i//batch_size + 1}: {len(batch)} articles")
+            elif response.status_code == 409:
+                # Partial save on conflict - count what was saved
+                total_saved += len(batch)
+                print(f"[RSS] ⚠️  Batch {i//batch_size + 1} had conflicts, partial save: {len(batch)} attempted")
+            else:
+                print(f"[RSS] ❌ Batch {i//batch_size + 1} save failed: {response.status_code}")
+        except Exception as e:
+            print(f"[RSS] ❌ Batch {i//batch_size + 1} exception: {e}")
+    
+    print(f"[RSS] ✅ Total saved to rss_pool: {total_saved} articles")
+    return total_saved
 
 
 # ─────────────────────────────────────────────

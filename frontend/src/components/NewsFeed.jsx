@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNews } from "../hooks/useStock";
 import { fmt } from "../api/stockApi";
 
@@ -10,11 +10,10 @@ const FILTERS = ["All", "Positive", "Negative", "Neutral"];
 // Response shape: { analysis: { overall_direction, sentiment_score,
 //   price_impact, results[], articles_analyzed, articles_input }, ... }
 // ─────────────────────────────────────────────────────────────────────────────
-async function fetchEI(symbol) {
-  const res = await fetch(`${API}/equity/analyze/${symbol}?hours_back=24`);
+async function fetchEI(symbol, signal) {
+  const res = await fetch(`${API}/equity/analyze/${symbol}?hours_back=24`, { signal });
   if (!res.ok) throw new Error(res.status);
   const json = await res.json();
-  // Data lives under json.analysis (not json.data)
   return json.analysis ?? json.data ?? json;
 }
 
@@ -137,13 +136,17 @@ function EIPanel({ symbol }) {
   const [error, setError] = useState(null);
   const [open, setOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const abortRef = useRef(null);
 
-  // Clear data when symbol changes to ensure fresh analysis
   useEffect(() => {
     setData(null);
     setDataSymbol(null);
     setError(null);
     setOpen(false);
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
   }, [symbol]);
 
   const toggle = async () => {
@@ -155,11 +158,14 @@ function EIPanel({ symbol }) {
     setOpen(true);
     setLoading(true);
     setError(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
-      const analysisData = await fetchEI(symbol);
+      const analysisData = await fetchEI(symbol, controller.signal);
       setData(analysisData);
       setDataSymbol(symbol);
     } catch (e) {
+      if (e.name === "AbortError") return;
       setError(
         e.message === "503"
           ? "Equity Intelligence offline — start equity_intelligence_v3/server.py"
@@ -167,6 +173,7 @@ function EIPanel({ symbol }) {
       );
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
   };
 

@@ -20,10 +20,17 @@ RULES:
   horizon: IMMEDIATE or SHORT_TERM or LONG_TERM
 - cause must explicitly mention the target stock symbol and explain the transmission path
     (for example: revenue demand, input costs, valuation multiples, sector sentiment,
-    regulatory exposure, supply chain, or customer concentration).
+    regulatory exposure, supply chain, or customer concentrations).
 
 EXAMPLE OUTPUT for 2 articles:
 [{"id":0,"impact":"HIGH","direction":"BULLISH","confidence":"HIGH","cause":"Deal adds 2% to annual revenue directly","horizon":"IMMEDIATE"},{"id":1,"impact":"MEDIUM","direction":"BEARISH","confidence":"MEDIUM","cause":"Rate hike compresses valuation multiples for growth stocks","horizon":"SHORT_TERM"}]"""
+
+_groq_clients = {}
+
+def _get_groq_client(api_key):
+    if api_key not in _groq_clients:
+        _groq_clients[api_key] = Groq(api_key=api_key)
+    return _groq_clients[api_key]
 
 
 def _entity_linked_cause(cause: str, article: dict, equity: dict) -> str:
@@ -154,7 +161,7 @@ def _analyze_batch(articles: list[dict], equity: dict) -> list[dict]:
             score=max_score,
             est_tokens=est_tokens
         )
-        client = Groq(api_key=api_key)
+        client = _get_groq_client(api_key)
 
         try:
             response = client.chat.completions.create(

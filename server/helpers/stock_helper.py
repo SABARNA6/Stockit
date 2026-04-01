@@ -39,12 +39,15 @@ _recommendation_client = None
 # Small in-memory cache for search suggestions.
 _SEARCH_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _SEARCH_CACHE_TTL_SECONDS = 120
+_SEARCH_CACHE_MAX_SIZE = 500
 _SEARCH_CACHE_EVICT_INTERVAL_SECONDS = 60
 _SEARCH_CACHE_LAST_EVICT_TS = 0.0
 _RECOMMENDATION_CACHE: dict[str, tuple[float, dict]] = {}
 _RECOMMENDATION_CACHE_TTL_SECONDS = int(os.getenv("STOCK_RECOMMENDATION_CACHE_TTL_SEC", "120"))
+_RECOMMENDATION_CACHE_MAX_SIZE = 200
 _ML_RECOMMEND_CACHE: dict[str, tuple[float, dict]] = {}
 _ML_RECOMMEND_CACHE_TTL_SECONDS = int(os.getenv("ML_RECOMMENDATION_CACHE_TTL_SEC", "300"))
+_ML_RECOMMEND_CACHE_MAX_SIZE = 200
 _SEARCH_ALIASES = {
     "HDFCBANK": "HDFC BANK",
     "RIL": "RELIANCE",
@@ -125,6 +128,11 @@ def _cache_evict_stale(now_ts: float | None = None) -> int:
     ]
     for k in stale_keys:
         _SEARCH_CACHE.pop(k, None)
+    if len(_SEARCH_CACHE) > _SEARCH_CACHE_MAX_SIZE:
+        excess = len(_SEARCH_CACHE) - _SEARCH_CACHE_MAX_SIZE
+        oldest = sorted(_SEARCH_CACHE.items(), key=lambda x: x[1][0])[:excess]
+        for k, _ in oldest:
+            _SEARCH_CACHE.pop(k, None)
     return len(stale_keys)
 
 
@@ -149,8 +157,11 @@ def _cache_get_dict(cache: dict[str, tuple[float, dict]], key: str, ttl_seconds:
     return data
 
 
-def _cache_set_dict(cache: dict[str, tuple[float, dict]], key: str, data: dict) -> None:
+def _cache_set_dict(cache: dict[str, tuple[float, dict]], key: str, data: dict, max_size: int = 200) -> None:
     now = datetime.now(timezone.utc).timestamp()
+    if len(cache) >= max_size:
+        oldest_key = min(cache, key=lambda k: cache[k][0])
+        cache.pop(oldest_key)
     cache[key] = (now, data)
 
 

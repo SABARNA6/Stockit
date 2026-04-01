@@ -4,6 +4,8 @@ import hashlib
 import os
 from datetime import datetime, timedelta
 from config.config import DB_PATH, TTL, MARKET_OPEN, MARKET_CLOSE
+import threading
+import atexit
 
 
 def _conn():
@@ -124,13 +126,35 @@ def delete(key: str):
 
 
 def purge_expired():
-    """Delete all expired rows — run once at startup."""
+    """Delete all expired rows."""
     with _conn() as c:
         deleted = c.execute(
             "DELETE FROM cache WHERE expires_at<?",
             (datetime.now().isoformat(),)
         ).rowcount
-    print(f"[cache] purged {deleted} expired rows")
+    if deleted > 0:
+        print(f"[cache] purged {deleted} expired rows")
+
+
+def start_purge_thread(interval_hours: int = 1):
+    """Run `purge_expired` in a background thread every `interval_hours`."""
+    _stop_event = threading.Event()
+
+    def run():
+        while not _stop_event.is_set():
+            purge_expired()
+            _stop_event.wait(interval_hours * 3600)
+
+    print(f"[cache] starting background purge thread (runs every {interval_hours}h)")
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+
+    def _shutdown():
+        _stop_event.set()
+        t.join(timeout=5)
+
+    atexit.register(_shutdown)
+    return _shutdown
 
 
 def stats():

@@ -33,6 +33,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - VITE_SUPABASE_URL=https://jfgenjpkachgssbsxzzf.supabase.co
+        - VITE_SUPABASE_ANON_KEY=sb_publishable_z27ATYTCE1sSyeTVNvD7SA_spK23_iH
     depends_on:
       - server
     ports:

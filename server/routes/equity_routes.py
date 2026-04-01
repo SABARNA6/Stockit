@@ -33,10 +33,13 @@ _INFLIGHT_TTL_SEC = int(os.getenv("EQUITY_ANALYZE_INFLIGHT_TTL_SEC", "300"))
 _ANALYZE_RESULT_CACHE_TTL_SEC = int(os.getenv("EQUITY_ANALYZE_RESULT_CACHE_TTL_SEC", "240"))
 _ANALYZE_WAIT_FOR_INFLIGHT_SEC = int(os.getenv("EQUITY_ANALYZE_WAIT_FOR_INFLIGHT_SEC", "95"))
 
+_RATE_LIMIT_MAX_KEYS = 1000
+
 _rate_hits: dict[str, list[float]] = {}
 _inflight: dict[str, float] = {}
 _inflight_events: dict[str, threading.Event] = {}
 _analyze_result_cache: dict[str, tuple[float, dict, int]] = {}
+_analyze_result_cache_max_size = 100
 _guard_lock = threading.Lock()
 
 
@@ -67,6 +70,13 @@ def _check_rate_limit(scope: str, client: str, limit: int, window_sec: int):
     now = time.time()
     key = f"{scope}:{client}"
     with _guard_lock:
+        stale_keys = [k for k, v in _rate_hits.items() if not any(now - ts < window_sec for ts in v)]
+        for k in stale_keys:
+            _rate_hits.pop(k, None)
+        if len(_rate_hits) > _RATE_LIMIT_MAX_KEYS:
+            oldest = sorted(_rate_hits.keys(), key=lambda k: max(_rate_hits[k], default=0))[:len(_rate_hits) - _RATE_LIMIT_MAX_KEYS]
+            for k in oldest:
+                _rate_hits.pop(k, None)
         hits = [ts for ts in _rate_hits.get(key, []) if now - ts < window_sec]
         if len(hits) >= limit:
             retry_after = max(1, int(window_sec - (now - hits[0])))
@@ -139,6 +149,9 @@ def _cache_get_analyze(job_key: str):
 
 def _cache_set_analyze(job_key: str, payload: dict, status: int):
     with _guard_lock:
+        if len(_analyze_result_cache) >= _analyze_result_cache_max_size:
+            oldest = min(_analyze_result_cache, key=lambda k: _analyze_result_cache[k][0])
+            _analyze_result_cache.pop(oldest)
         _analyze_result_cache[job_key] = (time.time(), payload, status)
 
 
